@@ -12,7 +12,13 @@ function storageKey(employeeId: string) {
 export function loadConversations(employeeId: string): Conversation[] {
   try {
     const raw = localStorage.getItem(storageKey(employeeId));
-    return raw ? (JSON.parse(raw) as Conversation[]) : [];
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as (Omit<Conversation, "mode"> & { mode?: Conversation["mode"] })[];
+    // Conversations saved before the mode switcher existed have no "mode"
+    // field - default them to genai-rag rather than breaking on load.
+    return parsed.map((conversation) => ({ ...conversation, mode: conversation.mode ?? "genai-rag" }));
   } catch {
     return [];
   }

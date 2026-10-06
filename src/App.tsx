@@ -1,6 +1,7 @@
 import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 import { IdentityProvider, useIdentity } from "./context/IdentityContext";
 import ChatPage from "./pages/ChatPage";
+import DocumentsPage from "./pages/DocumentsPage";
 import LoginPage from "./pages/LoginPage";
 import UploadPage from "./pages/UploadPage";
 import "./App.css";
@@ -30,6 +31,14 @@ function AppRoutes() {
         element={
           <RequireIdentity>
             <UploadPage />
+          </RequireIdentity>
+        }
+      />
+      <Route
+        path="/documents"
+        element={
+          <RequireIdentity>
+            <DocumentsPage />
           </RequireIdentity>
         }
       />

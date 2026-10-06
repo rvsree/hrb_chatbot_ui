@@ -17,12 +17,44 @@ export default function ExplainabilityModal({ message, onClose }: Explainability
         </section>
 
         <section>
-          <h3>Cost, tokens, latency, call trace</h3>
+          <h3>Cost, tokens, latency</h3>
           <p className="dev-note">
             Not available yet - the backend logs this per call (see <code>call_logger.py</code>)
             but no endpoint returns it today (see BACKLOG.md's Phase 95 entry).
           </p>
         </section>
+
+        {message.tasks && message.tasks.length > 0 && (
+          <section>
+            <h3>Agent tasks (multi-agentic-rag)</h3>
+            <ul className="citation-list">
+              {message.tasks.map((task, index) => (
+                <li key={`${task.agent}-${index}`}>
+                  <strong>{task.agent}</strong>: {task.focus}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {message.toolsUsed && (
+          <section>
+            <h3>
+              Call trace{message.iterations !== undefined && ` (${message.iterations} iteration${message.iterations === 1 ? "" : "s"})`}
+            </h3>
+            {message.toolsUsed.length > 0 ? (
+              <ol className="citation-list">
+                {message.toolsUsed.map((call, index) => (
+                  <li key={`${call.tool_name}-${index}`}>
+                    <strong>{call.tool_name}</strong>: {call.tool_input}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p>No tool calls recorded for this message.</p>
+            )}
+          </section>
+        )}
 
         <section>
           <h3>Citations</h3>

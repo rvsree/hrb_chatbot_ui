@@ -55,6 +55,18 @@ export interface DocumentUploadResponse {
 
 export type FeedbackVote = "helpful" | "not_quite";
 
+export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
+
+export interface ToolCallInfo {
+  tool_name: string;
+  tool_input: string;
+}
+
+export interface AgentTaskInfo {
+  agent: string;
+  focus: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -63,11 +75,58 @@ export interface ChatMessage {
   sources?: RetrievedChunk[];
   modelUsed?: string;
   feedback?: FeedbackVote | null;
+  toolsUsed?: ToolCallInfo[];
+  iterations?: number;
+  tasks?: AgentTaskInfo[];
 }
 
 export interface Conversation {
   id: string;
   title: string;
+  mode: ChatMode;
   messages: ChatMessage[];
   createdAt: number;
+}
+
+export interface VersioningInfo {
+  document_version: number;
+  is_current: boolean;
+  supersedes: string | null;
+  superseded_by: string | null;
+}
+
+export interface DocumentRecord {
+  id: string;
+  filename: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  last_indexed_at: string | null;
+  chunk_count: number;
+  file_size_bytes: number;
+  uploaded_by: string | null;
+  versioning_info: VersioningInfo | null;
+}
+
+export interface DocumentListResponse {
+  count: number;
+  documents: DocumentRecord[];
+}
+
+export interface AgenticRagResponse {
+  query: string;
+  answer: string;
+  tools_used: ToolCallInfo[];
+  iterations: number;
+  conversation_id: string | null;
+}
+
+export interface MultiAgenticRagResponse {
+  query: string;
+  answer: string;
+  tasks: AgentTaskInfo[];
+  tools_used: ToolCallInfo[];
+  iterations: number;
+  conversation_id: string | null;
 }

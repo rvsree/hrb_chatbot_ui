@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { askQuery, deleteConversation, ApiRequestError } from "../api/client";
+import { askAgenticQuery, askMultiAgenticQuery, askQuery, deleteConversation, ApiRequestError } from "../api/client";
 import ConversationSidebar from "../components/ConversationSidebar";
 import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
 import MessageBubble from "../components/MessageBubble";
 import { useIdentity } from "../context/IdentityContext";
 import { loadConversations, saveConversations } from "../storage/conversationsStorage";
-import type { ChatMessage, Conversation, FeedbackVote } from "../types";
+import type { ChatMessage, ChatMode, Conversation, FeedbackVote } from "../types";
+
+const MODE_LABELS: Record<ChatMode, string> = {
+  "genai-rag": "GenAI RAG (recommended)",
+  "single-agentic-rag": "Single-agent (tool-calling)",
+  "multi-agentic-rag": "Multi-agent (planner + domain agents)",
+};
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -23,6 +29,7 @@ export default function ChatPage() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<ChatMode>("genai-rag");
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -101,20 +108,53 @@ export default function ChatPage() {
       createdAt: Date.now(),
     };
 
+    const mode = activeConversation?.mode ?? selectedMode;
+    const conversationIdSoFar = activeConversation?.id ?? null;
+
     try {
-      const response = await askQuery(currentIdentity, query, activeConversation?.id ?? null);
+      let assistantMessage: ChatMessage;
+      let returnedConversationId: string | null;
 
-      const assistantMessage: ChatMessage = {
-        id: makeId(),
-        role: "assistant",
-        text: response.answer_info.answer,
-        createdAt: Date.now(),
-        sources: response.retrieval_info.sources,
-        modelUsed: response.answer_info.model_used,
-        feedback: null,
-      };
+      if (mode === "genai-rag") {
+        const response = await askQuery(currentIdentity, query, conversationIdSoFar);
+        assistantMessage = {
+          id: makeId(),
+          role: "assistant",
+          text: response.answer_info.answer,
+          createdAt: Date.now(),
+          sources: response.retrieval_info.sources,
+          modelUsed: response.answer_info.model_used,
+          feedback: null,
+        };
+        returnedConversationId = response.conversation_id;
+      } else if (mode === "single-agentic-rag") {
+        const response = await askAgenticQuery(currentIdentity, query, conversationIdSoFar);
+        assistantMessage = {
+          id: makeId(),
+          role: "assistant",
+          text: response.answer,
+          createdAt: Date.now(),
+          toolsUsed: response.tools_used,
+          iterations: response.iterations,
+          feedback: null,
+        };
+        returnedConversationId = response.conversation_id;
+      } else {
+        const response = await askMultiAgenticQuery(currentIdentity, query, conversationIdSoFar);
+        assistantMessage = {
+          id: makeId(),
+          role: "assistant",
+          text: response.answer,
+          createdAt: Date.now(),
+          toolsUsed: response.tools_used,
+          iterations: response.iterations,
+          tasks: response.tasks,
+          feedback: null,
+        };
+        returnedConversationId = response.conversation_id;
+      }
 
-      const conversationId = response.conversation_id ?? activeConversation?.id ?? makeId();
+      const conversationId = returnedConversationId ?? conversationIdSoFar ?? makeId();
 
       if (activeConversation) {
         const updated = conversations.map((entry) =>
@@ -127,6 +167,7 @@ export default function ChatPage() {
         const newConversation: Conversation = {
           id: conversationId,
           title: titleFromQuery(query),
+          mode,
           messages: [userMessage, assistantMessage],
           createdAt: Date.now(),
         };
@@ -192,9 +233,11 @@ export default function ChatPage() {
         <header className="chat-topbar">
           <span>
             {identity.full_name} ({identity.role})
+            {activeConversation && <span className="mode-indicator"> · {MODE_LABELS[activeConversation.mode]}</span>}
           </span>
           <div className="topbar-actions">
             {identity.role === "hr_support" && <Link to="/upload">Upload documents</Link>}
+            {identity.role === "hr_support" && <Link to="/documents">Manage documents</Link>}
             <button type="button" className="link-button" onClick={logout}>
               Sign out
             </button>
@@ -210,7 +253,32 @@ export default function ChatPage() {
               onExplain={() => setExplainTarget(message)}
             />
           ))}
-          {!activeConversation && <p className="empty-state">Ask a question about HR benefits to start.</p>}
+          {!activeConversation && (
+            <div className="empty-state">
+              <p>Ask a question about HR benefits to start.</p>
+              <label htmlFor="mode-select" className="mode-select-label">
+                Pipeline for this conversation:
+              </label>
+              <select
+                id="mode-select"
+                value={selectedMode}
+                onChange={(event) => setSelectedMode(event.target.value as ChatMode)}
+              >
+                {Object.entries(MODE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              {selectedMode === "multi-agentic-rag" && (
+                <p className="dev-note">
+                  This pipeline errors server-side when conversation memory is on (a real
+                  backend bug, not fixed here - see BACKLOG.md), so each question here is
+                  answered independently, without context from earlier turns.
+                </p>
+              )}
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
 

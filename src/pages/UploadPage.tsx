@@ -102,7 +102,7 @@ export default function UploadPage() {
       <div className="card upload-card">
         <h1>Document upload</h1>
         <p>
-          <Link to="/chat">Back to chat</Link>
+          <Link to="/chat">Back to chat</Link> · <Link to="/documents">Manage documents</Link>
         </p>
 
         <div

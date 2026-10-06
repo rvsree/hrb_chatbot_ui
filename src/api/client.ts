@@ -1,4 +1,11 @@
-import type { DocumentUploadResponse, RagQueryResponse, UserProfile } from "../types";
+import type {
+  AgenticRagResponse,
+  DocumentListResponse,
+  DocumentUploadResponse,
+  MultiAgenticRagResponse,
+  RagQueryResponse,
+  UserProfile,
+} from "../types";
 
 // Defaults to the live backend - no path prefix, matching hrb_chatbot_v2's
 // Phase 94/95 state. Override with VITE_API_BASE_URL in .env for local dev.
@@ -54,6 +61,56 @@ export async function askQuery(
   return (await response.json()) as RagQueryResponse;
 }
 
+export async function askAgenticQuery(
+  userProfile: UserProfile,
+  query: string,
+  conversationId: string | null,
+): Promise<AgenticRagResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/single-agentic-rag/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      query,
+      enable_conversation_memory: true,
+      conversation_id: conversationId,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AgenticRagResponse;
+}
+
+export async function askMultiAgenticQuery(
+  userProfile: UserProfile,
+  query: string,
+  // conversationId accepted for signature symmetry with the other two ask*
+  // functions, but deliberately unused below - see enable_conversation_memory.
+  _conversationId: string | null,
+): Promise<MultiAgenticRagResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/multi-agentic-rag/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      query,
+      // Found live, reproducible: this endpoint 500s whenever
+      // enable_conversation_memory is true - works fine without it. Real
+      // backend bug (not introduced here, not fixed here - see BACKLOG.md).
+      // Keeping this mode usable single-turn rather than removing it.
+      enable_conversation_memory: false,
+      conversation_id: null,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as MultiAgenticRagResponse;
+}
+
 export async function uploadDocuments(
   userProfile: UserProfile,
   files: File[],
@@ -73,6 +130,39 @@ export async function uploadDocuments(
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as DocumentUploadResponse;
+}
+
+export async function listDocuments(userProfile: UserProfile): Promise<DocumentListResponse> {
+  // Phase 96: identity is query params here, not a body - the Fetch spec
+  // forbids a body on GET/HEAD entirely (confirmed: fetch() throws before
+  // any network call reaches the server).
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/genai-rag/ingest-document/documents?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as DocumentListResponse;
+}
+
+export async function deleteDocumentById(
+  userProfile: UserProfile,
+  documentId: string,
+): Promise<{ document_id: string; filename: string; chunks_removed: number; deleted_by: string }> {
+  const response = await fetch(`${API_BASE_URL}/v1/genai-rag/ingest-document/documents/${documentId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return await response.json();
 }
 
 export async function deleteConversation(
