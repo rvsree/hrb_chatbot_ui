@@ -86,9 +86,7 @@ export async function askAgenticQuery(
 export async function askMultiAgenticQuery(
   userProfile: UserProfile,
   query: string,
-  // conversationId accepted for signature symmetry with the other two ask*
-  // functions, but deliberately unused below - see enable_conversation_memory.
-  _conversationId: string | null,
+  conversationId: string | null,
 ): Promise<MultiAgenticRagResponse> {
   const response = await fetch(`${API_BASE_URL}/v1/multi-agentic-rag/query`, {
     method: "POST",
@@ -96,12 +94,8 @@ export async function askMultiAgenticQuery(
     body: JSON.stringify({
       user_profile: userProfile,
       query,
-      // Found live, reproducible: this endpoint 500s whenever
-      // enable_conversation_memory is true - works fine without it. Real
-      // backend bug (not introduced here, not fixed here - see BACKLOG.md).
-      // Keeping this mode usable single-turn rather than removing it.
-      enable_conversation_memory: false,
-      conversation_id: null,
+      enable_conversation_memory: true,
+      conversation_id: conversationId,
     }),
   });
 

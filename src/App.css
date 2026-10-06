@@ -215,21 +215,23 @@ textarea {
   margin-top: 40px;
 }
 
-.mode-select-label {
-  display: block;
-  margin-top: 16px;
-  font-size: 12px;
-}
-
-.empty-state select {
-  width: auto;
-  margin-top: 4px;
-}
-
-.mode-indicator {
+.mode-select-corner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
-  font-weight: normal;
+}
+
+.mode-select-corner select {
+  width: auto;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.mode-select-corner select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .message {

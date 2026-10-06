@@ -233,9 +233,24 @@ export default function ChatPage() {
         <header className="chat-topbar">
           <span>
             {identity.full_name} ({identity.role})
-            {activeConversation && <span className="mode-indicator"> · {MODE_LABELS[activeConversation.mode]}</span>}
           </span>
           <div className="topbar-actions">
+            <label htmlFor="mode-select" className="mode-select-corner">
+              Pipeline:
+              <select
+                id="mode-select"
+                value={activeConversation ? activeConversation.mode : selectedMode}
+                disabled={!!activeConversation}
+                title={activeConversation ? "Set when this conversation started - start a new one to change it" : undefined}
+                onChange={(event) => setSelectedMode(event.target.value as ChatMode)}
+              >
+                {Object.entries(MODE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
             {identity.role === "hr_support" && <Link to="/upload">Upload documents</Link>}
             {identity.role === "hr_support" && <Link to="/documents">Manage documents</Link>}
             <button type="button" className="link-button" onClick={logout}>
@@ -253,32 +268,7 @@ export default function ChatPage() {
               onExplain={() => setExplainTarget(message)}
             />
           ))}
-          {!activeConversation && (
-            <div className="empty-state">
-              <p>Ask a question about HR benefits to start.</p>
-              <label htmlFor="mode-select" className="mode-select-label">
-                Pipeline for this conversation:
-              </label>
-              <select
-                id="mode-select"
-                value={selectedMode}
-                onChange={(event) => setSelectedMode(event.target.value as ChatMode)}
-              >
-                {Object.entries(MODE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              {selectedMode === "multi-agentic-rag" && (
-                <p className="dev-note">
-                  This pipeline errors server-side when conversation memory is on (a real
-                  backend bug, not fixed here - see BACKLOG.md), so each question here is
-                  answered independently, without context from earlier turns.
-                </p>
-              )}
-            </div>
-          )}
+          {!activeConversation && <p className="empty-state">Ask a question about HR benefits to start.</p>}
           <div ref={bottomRef} />
         </div>
 
