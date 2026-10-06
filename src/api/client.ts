@@ -44,7 +44,7 @@ export async function askQuery(
   query: string,
   conversationId: string | null,
 ): Promise<RagQueryResponse> {
-  const response = await fetch(`${API_BASE_URL}/v1/genai-rag/retrieve-document/query`, {
+  const response = await fetch(`${API_BASE_URL}/v1/genai-rag-retrieval/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -66,7 +66,7 @@ export async function askAgenticQuery(
   query: string,
   conversationId: string | null,
 ): Promise<AgenticRagResponse> {
-  const response = await fetch(`${API_BASE_URL}/v1/single-agentic-rag/query`, {
+  const response = await fetch(`${API_BASE_URL}/v1/single-agentic-rag-retrieval/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -88,7 +88,7 @@ export async function askMultiAgenticQuery(
   query: string,
   conversationId: string | null,
 ): Promise<MultiAgenticRagResponse> {
-  const response = await fetch(`${API_BASE_URL}/v1/multi-agentic-rag/query`, {
+  const response = await fetch(`${API_BASE_URL}/v1/multi-agentic-rag-retrieval/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
