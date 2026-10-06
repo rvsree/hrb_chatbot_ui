@@ -147,8 +147,15 @@ textarea {
   gap: 4px;
 }
 
+.conversation-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .conversation-item {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   background: transparent;
   color: var(--text);
@@ -164,6 +171,11 @@ textarea {
 .conversation-item.active {
   border-color: var(--accent);
   background: var(--bg);
+}
+
+.conversation-delete {
+  flex-shrink: 0;
+  font-size: 11px;
 }
 
 .chat-main {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { askQuery, ApiRequestError } from "../api/client";
+import { askQuery, deleteConversation, ApiRequestError } from "../api/client";
 import ConversationSidebar from "../components/ConversationSidebar";
 import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
@@ -58,6 +58,30 @@ export default function ChatPage() {
     setActiveConversationId(null);
     setDraft("");
     setSendError(null);
+  }
+
+  async function handleDeleteConversation(conversationId: string) {
+    if (!window.confirm("Delete this conversation? This can't be undone.")) {
+      return;
+    }
+    try {
+      // Scoped server-side to the caller's own employee_id - see
+      // api/conversations/manage_conversations.py's delete_conversation().
+      await deleteConversation(currentIdentity, conversationId);
+    } catch (error) {
+      if (error instanceof ApiRequestError) {
+        setSendError(`Couldn't delete that conversation: ${error.message} (${error.code})`);
+      } else {
+        setSendError("Couldn't delete that conversation - something went wrong reaching the backend.");
+      }
+      return;
+    }
+
+    const remaining = conversations.filter((entry) => entry.id !== conversationId);
+    persist(remaining);
+    if (activeConversationId === conversationId) {
+      setActiveConversationId(null);
+    }
   }
 
   async function handleSend(event: FormEvent) {
@@ -161,6 +185,7 @@ export default function ChatPage() {
         activeConversationId={activeConversationId}
         onSelect={setActiveConversationId}
         onNewConversation={handleNewConversation}
+        onDelete={handleDeleteConversation}
       />
 
       <div className="chat-main">
