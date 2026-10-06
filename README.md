@@ -5,13 +5,66 @@ deliberately - see `hrb_chatbot_v2/docs/dev-reference/deployment-guide/
 07-reactjs-ui.html`). Deploys to S3 + CloudFront, not App Runner - its own
 build/deploy pipeline, decoupled from the backend's.
 
-## Setup
+## Running this project (first time, step by step)
 
-```
-npm install
-cp .env.example .env   # defaults to the live backend at hrb-chatbot.rvsree.dev
-npm run dev
-```
+If you're coming from ASP.NET: there's no single "project file" to open or
+run. You run small commands in a terminal, and they read config files
+automatically - closer to running `dotnet watch run` from a terminal than
+pressing F5 in Visual Studio.
+
+1. **Open a terminal in VS Code.** Menu bar -> Terminal -> New Terminal (or
+   `` Ctrl+` ``). Make sure it's sitting in this project's folder (the
+   prompt should show `hrb_chatbot_ui`).
+2. **Install dependencies (first time only, like `dotnet restore`):**
+   ```
+   npm install
+   ```
+   This reads `package.json` (closest equivalent: a `.csproj` plus its
+   NuGet package list, combined) and downloads everything into
+   `node_modules/` (gitignored, like a `bin/`/`obj/` folder - never commit
+   it, never worry about its contents).
+3. **Create your local config (first time only, like copying
+   `appsettings.json` to `appsettings.Development.json`):**
+   ```
+   cp .env.example .env
+   ```
+   `.env` isn't committed to git - it's your machine's own settings. The
+   default already points at the live AWS backend, so this works with no
+   editing.
+4. **Start the dev server:**
+   ```
+   npm run dev
+   ```
+   This is the closest thing to pressing F5: it starts a local web server
+   and keeps running in that terminal (like IIS Express staying open while
+   you debug). It prints a URL - something like `http://localhost:5173/`.
+5. **Open that URL in Chrome.** That's the app. Every time you save a
+   file, the open page updates itself automatically (no restart needed -
+   this is "hot reload", there's no real equivalent in classic ASP.NET).
+6. **To stop it:** click into that terminal and press `Ctrl+C`.
+
+**If `npm run dev` says the port is already in use:** something else
+(maybe a previous run that didn't get stopped cleanly) is still listening
+on 5173. Close that old terminal, or just use a different port:
+`npm run dev -- --port 5174` and open that port instead.
+
+**What each file actually is**, mapped to ASP.NET terms:
+
+| This project | Closest ASP.NET equivalent |
+| --- | --- |
+| `package.json` | `.csproj` + NuGet package list, combined |
+| `package.json`'s `"scripts"` section | the commands `npm run <name>` actually runs - e.g. `npm run dev` runs `vite` |
+| `vite.config.ts` | dev-server/startup config (port, plugins) |
+| `tsconfig.json` | compiler settings (target framework, language version) |
+| `.env` | `appsettings.Development.json` |
+| `src/main.tsx` | `Program.cs` - the real entry point |
+| `src/App.tsx` | where routes are registered - `Startup.cs`'s `UseEndpoints` |
+| `node_modules/` | `bin/`/`obj/` - generated, gitignored, ignore it |
+
+**When something breaks in the browser:** open Chrome DevTools (`F12`),
+click the **Console** tab, and either screenshot it or copy the red error
+text - that's the most useful thing to paste back for help, more useful
+than describing what the screen looked like.
 
 ## What's real vs. mocked in this first phase
 
