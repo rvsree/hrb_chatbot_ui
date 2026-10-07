@@ -11,6 +11,7 @@ build/deploy pipeline, decoupled from the backend's.
 | --- | --- | --- |
 | Frontend (this repo) | `http://localhost:5173` (`npm run dev`) | `https://hrb-chatbot-ui.rvsree.dev` |
 | Backend (`hrb_chatbot_v2`, separate repo) | `http://127.0.0.1:8093` | `https://hrb-chatbot.rvsree.dev` |
+| MCP server (`hrb_lms_mcp`, separate repo - leave balance/history tools, called by the backend, not by this frontend directly) | `http://127.0.0.1:8190` | `https://hrb-lms-mcp.rvsree.dev` |
 
 Local dev (`.env`, gitignored) points at whatever `VITE_API_BASE_URL` you
 set - `.env.example` defaults it to the production backend, so a fresh
@@ -84,24 +85,29 @@ click the **Console** tab, and either screenshot it or copy the red error
 text - that's the most useful thing to paste back for help, more useful
 than describing what the screen looked like.
 
-## What's real vs. mocked in this first phase
+## What's real vs. mocked
 
 Built against `hrb_chatbot_v2`'s actual API contracts, not invented ones -
-see that repo's `docs/dev-reference/ui-wireframes-review.html` and
-`docs/agent-reference/BACKLOG.md`'s "UI backend-gap findings" section for
-the full audit. Three things the backend doesn't support yet, so they're
-clearly labeled rather than faked:
+see that repo's `docs/dev-reference/ui-wireframes-review.html` for the
+original audit. Updated 2026-10-07 - two of the three gaps that audit found
+have since been closed:
 
-- **Login** is a dev-only form collecting `employee_id`/`full_name`/`role`
-  - the same fields the API already reads from `user_profile` on every
-    request. No real OAuth/JWT exists on the backend yet.
-- **Conversation history** lives in `localStorage` only (one browser, one
-  device) - the backend has no `GET` endpoint for it, only `DELETE`.
-- **Feedback** ("Helpful"/"Not quite") and the **explainability** popup's
-  cost/token/latency/call-trace fields aren't persisted or returned by any
-  endpoint yet - feedback logs to the console, explainability shows real
-  model/citation data and labels the rest "not available yet."
+- **Login** validates `employee_id`/`full_name`/`role` against a small
+  fixed roster on the backend (`POST /v1/auth/login`, Phase 106) - denies
+  an unknown identity instead of accepting anything typed into the form.
+  Still not real OAuth/JWT - once signed in, role is self-asserted on
+  every later request, same as before.
+- **Conversation history** is real now: `GET /v1/conversations` (own list)
+  and `GET /v1/conversations/{id}` (one conversation's turns) both exist
+  (Phase 116) - `ChatPage.tsx` lazy-loads from these on login and merges
+  them into local state, not `localStorage`-only anymore.
+- **Feedback** ("Helpful"/"Not quite") is persisted for real
+  (`POST`/`GET /v1/feedback`, Phase 104) - `ViewFeedbackPage.tsx` (route
+  `/feedback`) lists it back out. The **explainability** popup's
+  cost-in-dollars field is still the one real gap left - token/latency/
+  cache-vs-live/eval-score fields are all real, cost is explicitly
+  excluded (tracked in `hrb_chatbot_v2`'s own `BACKLOG.md`).
 
-Real and working: asking a question (`POST /v1/genai-rag/retrieve-document/
-query`), citations, and document upload for `hr_support`-role users
+Real and working: asking a question (`POST /v1/genai-rag-retrieval/query`),
+citations, and document upload for `hr_support`-role users
 (`POST /v1/genai-rag/ingest-document/documents`).
