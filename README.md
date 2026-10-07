@@ -5,6 +5,24 @@ deliberately - see `hrb_chatbot_v2/docs/dev-reference/deployment-guide/
 07-reactjs-ui.html`). Deploys to S3 + CloudFront, not App Runner - its own
 build/deploy pipeline, decoupled from the backend's.
 
+## Environments
+
+| App | Local | AWS (production) |
+| --- | --- | --- |
+| Frontend (this repo) | `http://localhost:5173` (`npm run dev`) | `https://hrb-chatbot-ui.rvsree.dev` |
+| Backend (`hrb_chatbot_v2`, separate repo) | `http://127.0.0.1:8093` | `https://hrb-chatbot.rvsree.dev` |
+
+Local dev (`.env`, gitignored) points at whatever `VITE_API_BASE_URL` you
+set - `.env.example` defaults it to the production backend, so a fresh
+`cp .env.example .env` works with no editing. The production build
+(`.env.production`, committed - no secrets in it) always targets the
+production backend regardless of your local `.env`. The AWS frontend is a
+static `npm run build` output synced to an S3 bucket (`hrb-chatbot-ui-
+rvsree`) behind a CloudFront distribution with a Route53 alias - provisioned
+manually via the AWS CLI (2026-10-07), no CI/CD pipeline for it yet (a real
+upfront cost this repo's own deployment-guide doc already flagged - see the
+link above).
+
 ## Running this project (first time, step by step)
 
 If you're coming from ASP.NET: there's no single "project file" to open or
