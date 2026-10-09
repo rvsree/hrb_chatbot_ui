@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { ApiRequestError, validateLogin } from "../api/client";
 import { useIdentity } from "../context/IdentityContext";
 import type { Role } from "../types";
 
@@ -9,14 +10,29 @@ export default function LoginPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<Role>("employee");
+  const [isValidating, setIsValidating] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!employeeId.trim() || !fullName.trim()) {
+    if (!employeeId.trim() || !fullName.trim() || isValidating) {
       return;
     }
-    login({ employee_id: employeeId.trim(), full_name: fullName.trim(), role });
-    navigate("/chat");
+    setIsValidating(true);
+    setLoginError(null);
+    try {
+      const userProfile = await validateLogin(employeeId.trim(), fullName.trim(), role);
+      login(userProfile);
+      navigate("/chat");
+    } catch (error) {
+      if (error instanceof ApiRequestError) {
+        setLoginError(error.message);
+      } else {
+        setLoginError("Something went wrong reaching the backend.");
+      }
+    } finally {
+      setIsValidating(false);
+    }
   }
 
   return (
@@ -24,9 +40,9 @@ export default function LoginPage() {
       <form className="card login-card" onSubmit={handleSubmit}>
         <h1>HRB Chatbot</h1>
         <p className="dev-note">
-          Real OAuth/JWT sign-in isn't built on the backend yet (see BACKLOG.md). This form
-          collects the same <code>user_profile</code> fields (employee id, name, role) the API
-          already checks on every request - a stand-in for the real login screen, not a fake one.
+          Sign-in is checked against a small known-personas list on the backend (Phase 106) -
+          an unknown id/name/role combo is denied. This still isn't real authentication: once
+          signed in, role is self-asserted on every request, same as before (see BACKLOG.md).
         </p>
 
         <label htmlFor="employee-id">Employee ID</label>
@@ -54,7 +70,11 @@ export default function LoginPage() {
           <option value="hr_support">HR Support</option>
         </select>
 
-        <button type="submit">Sign in</button>
+        {loginError && <p className="error-banner">{loginError}</p>}
+
+        <button type="submit" disabled={isValidating}>
+          {isValidating ? "Signing in..." : "Sign in"}
+        </button>
       </form>
     </div>
   );

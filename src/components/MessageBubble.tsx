@@ -1,42 +1,72 @@
-import type { ChatMessage, FeedbackVote } from "../types";
+import ThumbIcon from "./ThumbIcon";
+import { parseMessageIntoSegments } from "../utils/markdownTable";
+import type { ChatMessage } from "../types";
 
 interface MessageBubbleProps {
   message: ChatMessage;
-  onFeedback: (vote: FeedbackVote) => void;
+  onOpenFeedback: () => void;
   onExplain: () => void;
 }
 
-export default function MessageBubble({ message, onFeedback, onExplain }: MessageBubbleProps) {
+function formatTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+export default function MessageBubble({ message, onOpenFeedback, onExplain }: MessageBubbleProps) {
   const isAssistant = message.role === "assistant";
+  const segments = isAssistant ? parseMessageIntoSegments(message.text) : null;
 
   return (
     <div className={isAssistant ? "message message-assistant" : "message message-user"}>
-      <p className="message-text">{message.text}</p>
+      <div className="message-header">
+        <span className="message-avatar">{isAssistant ? "AI" : "Y"}</span>
+        <span className="message-time">{formatTime(message.createdAt)}</span>
+      </div>
 
-      {isAssistant && message.sources && message.sources.length > 0 && (
-        <p className="message-citations">
-          Sources:{" "}
-          {message.sources
-            .map((source) => `${source.filename}, chunk ${source.chunk_index}`)
-            .join("; ")}
-        </p>
+      {segments ? (
+        segments.map((segment, index) =>
+          segment.type === "table" ? (
+            <div className="message-table-wrap" key={index}>
+              <table className="message-table">
+                <thead>
+                  <tr>
+                    {segment.headers.map((header, headerIndex) => (
+                      <th key={headerIndex}>{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {segment.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="message-text" key={index}>
+              {segment.content}
+            </p>
+          ),
+        )
+      ) : (
+        <p className="message-text">{message.text}</p>
       )}
 
       {isAssistant && (
         <div className="message-actions">
           <button
             type="button"
-            className={message.feedback === "helpful" ? "link-button active" : "link-button"}
-            onClick={() => onFeedback("helpful")}
+            className={message.feedback ? "link-button active" : "link-button"}
+            onClick={onOpenFeedback}
           >
-            Helpful
-          </button>
-          <button
-            type="button"
-            className={message.feedback === "not_quite" ? "link-button active" : "link-button"}
-            onClick={() => onFeedback("not_quite")}
-          >
-            Not quite
+            {message.feedback ? (
+              <ThumbIcon direction={message.feedback === "helpful" ? "up" : "down"} size={13} />
+            ) : null}
+            Feedback
           </button>
           <button type="button" className="link-button" onClick={onExplain}>
             Explainability

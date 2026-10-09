@@ -4,6 +4,7 @@ import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import LoginPage from "./pages/LoginPage";
 import UploadPage from "./pages/UploadPage";
+import ViewFeedbackPage from "./pages/ViewFeedbackPage";
 import "./App.css";
 
 function RequireIdentity({ children }: { children: React.ReactElement }) {
@@ -39,6 +40,14 @@ function AppRoutes() {
         element={
           <RequireIdentity>
             <DocumentsPage />
+          </RequireIdentity>
+        }
+      />
+      <Route
+        path="/feedback"
+        element={
+          <RequireIdentity>
+            <ViewFeedbackPage />
           </RequireIdentity>
         }
       />

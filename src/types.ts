@@ -26,10 +26,41 @@ export interface RetrievalInfo {
   sources: RetrievedChunk[];
 }
 
+export interface TokenUsageInfo {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+export interface LatencyInfo {
+  total: number;
+  retrieval: number | null;
+  generation: number | null;
+  eval: number | null;
+}
+
+export interface EvalScores {
+  groundedness: number;
+  groundedness_verdict: "GROUNDED" | "PARTIAL" | "HALLUCINATED";
+  completeness: number;
+  completeness_verdict: "COMPLETE" | "PARTIAL" | "INCOMPLETE";
+}
+
+export interface ExplainabilityInfo {
+  served_from_cache: boolean;
+  llm_call_count: number;
+  latency_ms: LatencyInfo;
+  token_usage: TokenUsageInfo | null;
+  routed_to: string | null;
+  eval_scores: EvalScores | null;
+}
+
 export interface RagQueryResponse {
   query: string;
   answer_info: AnswerInfo;
   retrieval_info: RetrievalInfo;
+  explainability_info: ExplainabilityInfo;
+  tools_used: ToolCallInfo[];
   conversation_id: string | null;
 }
 
@@ -55,11 +86,71 @@ export interface DocumentUploadResponse {
 
 export type FeedbackVote = "helpful" | "not_quite";
 
+export interface FeedbackRecord {
+  id: number;
+  employee_id: string;
+  conversation_id: string | null;
+  message_id: string;
+  vote: FeedbackVote;
+  reason_tags: string[];
+  notes: string | null;
+  question: string;
+  answer: string;
+  created_at: string;
+}
+
+export interface FeedbackListResponse {
+  count: number;
+  feedback: FeedbackRecord[];
+}
+
+export interface ConversationSummary {
+  conversation_id: string;
+  title: string;
+  started_at: string;
+  last_updated_at: string;
+}
+
+export interface ConversationListResponse {
+  count: number;
+  conversations: ConversationSummary[];
+}
+
+export interface ConversationTurnRecord {
+  role: "human" | "ai";
+  content: string;
+  created_at: string;
+}
+
+export interface ConversationDetailResponse {
+  conversation_id: string;
+  turns: ConversationTurnRecord[];
+}
+
 export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
+
+// Backend only supports these two (common/enums.py::SearchStrategy) -
+// "similarity" is plain vector search, "mmr" trades some relevance for
+// less redundant results. No keyword/hybrid/text-search backend exists.
+export type SearchStrategy = "similarity" | "mmr";
+
+export interface GenaiRagOptions {
+  temperature: number;
+  searchStrategy: SearchStrategy;
+}
+
+// tool_type: Phase 126 - which kind of backend this call hit. Not a closed
+// union - new values can appear as this project's tool/agent set grows
+// (common/rag_core/tool_classification.py's own fallback is "other"), so
+// rendering code must treat any unrecognized string as "Other", not crash.
+export type ToolType = "vector_db" | "mcp" | "web_search" | "sql_db" | "other";
 
 export interface ToolCallInfo {
   tool_name: string;
   tool_input: string;
+  tool_type: ToolType;
+  latency_ms: number | null;
+  success: boolean;
 }
 
 export interface AgentTaskInfo {
@@ -78,6 +169,8 @@ export interface ChatMessage {
   toolsUsed?: ToolCallInfo[];
   iterations?: number;
   tasks?: AgentTaskInfo[];
+  explainability?: ExplainabilityInfo;
+  retrievalInfo?: RetrievalInfo;
 }
 
 export interface Conversation {
@@ -95,6 +188,12 @@ export interface VersioningInfo {
   superseded_by: string | null;
 }
 
+export interface ChunkInfo {
+  chunking_strategy: string | null;
+  chunk_size: number | null;
+  chunk_overlap: number | null;
+}
+
 export interface DocumentRecord {
   id: string;
   filename: string;
@@ -107,6 +206,7 @@ export interface DocumentRecord {
   file_size_bytes: number;
   uploaded_by: string | null;
   versioning_info: VersioningInfo | null;
+  chunk_info: ChunkInfo | null;
 }
 
 export interface DocumentListResponse {
@@ -118,7 +218,9 @@ export interface AgenticRagResponse {
   query: string;
   answer: string;
   tools_used: ToolCallInfo[];
+  sources: RetrievedChunk[];
   iterations: number;
+  explainability_info: ExplainabilityInfo;
   conversation_id: string | null;
 }
 
@@ -127,6 +229,8 @@ export interface MultiAgenticRagResponse {
   answer: string;
   tasks: AgentTaskInfo[];
   tools_used: ToolCallInfo[];
+  sources: RetrievedChunk[];
   iterations: number;
+  explainability_info: ExplainabilityInfo;
   conversation_id: string | null;
 }
