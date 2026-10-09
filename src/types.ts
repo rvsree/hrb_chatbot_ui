@@ -46,6 +46,30 @@ export interface EvalScores {
   completeness_verdict: "COMPLETE" | "PARTIAL" | "INCOMPLETE";
 }
 
+export interface ChatHistoryMessage {
+  role: string;
+  content: string;
+}
+
+export interface McpToolCallDetail {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  raw_result: string[];
+}
+
+export interface LlmContextTurn {
+  label: string;
+  system_prompt: string | null;
+  human_message: string | null;
+  chat_history: ChatHistoryMessage[];
+  response: string | null;
+}
+
+export interface LlmContextInfo {
+  turns: LlmContextTurn[];
+  mcp_tool_calls: McpToolCallDetail[];
+}
+
 export interface ExplainabilityInfo {
   served_from_cache: boolean;
   llm_call_count: number;
@@ -53,6 +77,8 @@ export interface ExplainabilityInfo {
   token_usage: TokenUsageInfo | null;
   routed_to: string | null;
   eval_scores: EvalScores | null;
+  temperature: number | null;
+  llm_context: LlmContextInfo | null;
 }
 
 export interface RagQueryResponse {
@@ -129,14 +155,16 @@ export interface ConversationDetailResponse {
 
 export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
 
-// Backend only supports these two (common/enums.py::SearchStrategy) -
-// "similarity" is plain vector search, "mmr" trades some relevance for
-// less redundant results. No keyword/hybrid/text-search backend exists.
-export type SearchStrategy = "similarity" | "mmr";
+// Matches common/enums.py::SearchStrategy (Phase 131 added keyword/hybrid).
+// "similarity" is plain vector search, "mmr" trades some relevance for less
+// redundant results, "keyword" is real BM25 lexical ranking, "hybrid" merges
+// "keyword" and "similarity" via Reciprocal Rank Fusion.
+export type SearchStrategy = "similarity" | "mmr" | "keyword" | "hybrid";
 
 export interface GenaiRagOptions {
   temperature: number;
   searchStrategy: SearchStrategy;
+  lambdaMult?: number;
 }
 
 // tool_type: Phase 126 - which kind of backend this call hit. Not a closed
@@ -197,6 +225,7 @@ export interface ChunkInfo {
 export interface DocumentRecord {
   id: string;
   filename: string;
+  file_path: string;
   status: string;
   error_message: string | null;
   created_at: string;
@@ -207,11 +236,22 @@ export interface DocumentRecord {
   uploaded_by: string | null;
   versioning_info: VersioningInfo | null;
   chunk_info: ChunkInfo | null;
+  embedding_model: string | null;
 }
 
 export interface DocumentListResponse {
   count: number;
   documents: DocumentRecord[];
+}
+
+// Phase 89 (backend, already live) - POST .../documents/presigned-upload.
+// Nothing has been indexed yet at response time - poll GET /documents/{id}
+// (DocumentRecord.status) for the real result.
+export interface PresignedUploadResponse {
+  document_id: string;
+  upload_url: string;
+  expires_in_seconds: number;
+  status: string;
 }
 
 export interface AgenticRagResponse {

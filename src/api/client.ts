@@ -3,11 +3,14 @@ import type {
   ConversationDetailResponse,
   ConversationListResponse,
   DocumentListResponse,
+  DocumentRecord,
   DocumentUploadResponse,
+  DocumentUploadResult,
   FeedbackListResponse,
   FeedbackVote,
   GenaiRagOptions,
   MultiAgenticRagResponse,
+  PresignedUploadResponse,
   RagQueryResponse,
   UserProfile,
 } from "../types";
@@ -58,7 +61,9 @@ export async function askQuery(
       query,
       enable_conversation_memory: true,
       conversation_id: conversationId,
-      search_options: options ? { search_strategy: options.searchStrategy } : undefined,
+      search_options: options
+        ? { search_strategy: options.searchStrategy, lambda_mult: options.lambdaMult }
+        : undefined,
       generation_options: options ? { temperature: options.temperature } : undefined,
     }),
   });
@@ -117,18 +122,27 @@ export async function uploadDocuments(
   userProfile: UserProfile,
   files: File[],
   supersedesDocumentId?: string,
+  chunkingStrategy?: string,
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData();
   for (const file of files) {
     formData.append("files", file);
   }
-  const payload: { user_profile: UserProfile; document_metadata?: { supersedes_document_id: string } } = {
+  const payload: {
+    user_profile: UserProfile;
+    document_metadata?: { supersedes_document_id: string };
+    chunk_info?: { chunking_strategy: string };
+  } = {
     user_profile: userProfile,
   };
   if (supersedesDocumentId) {
     // Backend requires exactly one file when superseding - the caller
     // (DocumentsPage's "Replace" action) only ever passes one in that case.
     payload.document_metadata = { supersedes_document_id: supersedesDocumentId };
+  }
+  if (chunkingStrategy) {
+    // Applies to every file in this batch - the backend has no per-file override.
+    payload.chunk_info = { chunking_strategy: chunkingStrategy };
   }
   formData.append("payload", JSON.stringify(payload));
 
@@ -160,6 +174,60 @@ export async function listDocuments(userProfile: UserProfile): Promise<DocumentL
   return (await response.json()) as DocumentListResponse;
 }
 
+export async function getDocument(userProfile: UserProfile, documentId: string): Promise<DocumentRecord> {
+  // Same Phase 96 query-param identity pattern as listDocuments() - GET can't carry a body.
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/genai-rag/ingest-document/documents/${documentId}?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as DocumentRecord;
+}
+
+export async function requestPresignedUpload(
+  userProfile: UserProfile,
+  filename: string,
+  contentType: string,
+  chunkingStrategy?: string,
+  supersedesDocumentId?: string,
+): Promise<PresignedUploadResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/genai-rag/ingest-document/documents/presigned-upload`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      filename,
+      content_type: contentType,
+      chunk_info: chunkingStrategy ? { chunking_strategy: chunkingStrategy } : undefined,
+      document_metadata: supersedesDocumentId ? { supersedes_document_id: supersedesDocumentId } : undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as PresignedUploadResponse;
+}
+
+export async function uploadFileToS3(uploadUrl: string, file: File, contentType: string): Promise<void> {
+  // Goes straight to S3, not this project's own backend - the presigned URL
+  // itself carries the authorization, no header or credential needed here.
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new ApiRequestError(`S3 upload failed with status ${response.status}`, "S3_UPLOAD_FAILED", response.status);
+  }
+}
+
 export async function deleteDocumentById(
   userProfile: UserProfile,
   documentId: string,
@@ -174,6 +242,26 @@ export async function deleteDocumentById(
     await parseErrorAndThrow(response);
   }
   return await response.json();
+}
+
+export async function rechunkDocument(
+  userProfile: UserProfile,
+  documentId: string,
+  chunkingStrategy: string,
+): Promise<DocumentUploadResult> {
+  const response = await fetch(`${API_BASE_URL}/v1/genai-rag/ingest-document/documents/${documentId}/rechunk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      chunk_info: { chunking_strategy: chunkingStrategy },
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as DocumentUploadResult;
 }
 
 export async function submitFeedback(
@@ -281,4 +369,13 @@ export async function deleteConversation(
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as { conversation_id: string; turns_deleted: number };
+}
+
+export async function getHealth(): Promise<{ embedding_model: string }> {
+  const response = await fetch(`${API_BASE_URL}/health`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as { embedding_model: string };
 }

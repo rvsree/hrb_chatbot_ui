@@ -6,6 +6,7 @@ import {
   askQuery,
   deleteConversation,
   getConversation,
+  getHealth,
   listConversations,
   submitFeedback,
   ApiRequestError,
@@ -19,24 +20,21 @@ import { loadConversations, saveConversations } from "../storage/conversationsSt
 import type { ChatMessage, ChatMode, Conversation, FeedbackVote, SearchStrategy } from "../types";
 
 const MODE_LABELS: Record<ChatMode, string> = {
-  "genai-rag": "GenAI RAG (recommended)",
-  "single-agentic-rag": "Single-agent (tool-calling)",
-  "multi-agentic-rag": "Multi-agent (planner + domain agents)",
+  "genai-rag": "GenAI RAG",
+  "single-agentic-rag": "Single-Agent RAG",
+  "multi-agentic-rag": "Multi-Agent RAG",
 };
 
 const SEARCH_STRATEGY_LABELS: Record<SearchStrategy, string> = {
-  similarity: "Similarity (default)",
-  mmr: "MMR (more diverse results)",
+  similarity: "Semantic Search",
+  mmr: "MMR",
+  keyword: "Keyword",
+  hybrid: "Hybrid",
 };
 
-const DEFAULT_TEMPERATURE = 0.0;
+const DEFAULT_LAMBDA_MULT = 0.5;
 
-// Locked by default: the 3 modes return genuinely different response
-// shapes (only genai-rag has retrieval_info; the agentic modes have
-// tools_used/tasks instead), so switching mid-conversation mixes shapes
-// in one conversation's history. Set VITE_ALLOW_PIPELINE_SWITCH_MID_CONVERSATION=true
-// in .env to unlock it anyway.
-const ALLOW_PIPELINE_SWITCH_MID_CONVERSATION = import.meta.env.VITE_ALLOW_PIPELINE_SWITCH_MID_CONVERSATION === "true";
+const DEFAULT_TEMPERATURE = 0.0;
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -55,12 +53,15 @@ export default function ChatPage() {
   const [selectedMode, setSelectedMode] = useState<ChatMode>("genai-rag");
   const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE);
   const [searchStrategy, setSearchStrategy] = useState<SearchStrategy>("similarity");
+  const [lambdaMult, setLambdaMult] = useState(DEFAULT_LAMBDA_MULT);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<{ messageId: string } | null>(null);
   const [explainTarget, setExplainTarget] = useState<ChatMessage | null>(null);
+  const [explainQuery, setExplainQuery] = useState<string | null>(null);
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
+  const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const adminMenuRef = useRef<HTMLDivElement>(null);
@@ -71,6 +72,11 @@ export default function ChatPage() {
       return;
     }
     setConversations(loadConversations(identity.employee_id));
+
+    // Phase 128 - best-effort; Settings panel just shows nothing for this field if it fails.
+    getHealth()
+      .then((health) => setEmbeddingModel(health.embedding_model))
+      .catch(() => {});
 
     // Phase 116: merge in conversations that exist on the server but not in
     // this browser's own storage (started on a different device/browser) -
@@ -112,7 +118,7 @@ export default function ChatPage() {
       return;
     }
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 320)}px`;
   }, [draft]);
 
   useEffect(() => {
@@ -131,11 +137,11 @@ export default function ChatPage() {
   const currentIdentity: typeof identity = identity;
 
   const activeConversation = conversations.find((entry) => entry.id === activeConversationId) ?? null;
-  // Locked (default): frozen to the conversation's own starting mode, once
-  // one exists. Unlocked (VITE_ALLOW_PIPELINE_SWITCH_MID_CONVERSATION=true):
-  // always the live dropdown selection, so each turn can use a different pipeline.
-  const effectiveMode: ChatMode =
-    activeConversation && !ALLOW_PIPELINE_SWITCH_MID_CONVERSATION ? activeConversation.mode : selectedMode;
+  // Pipeline is always the live dropdown selection - switchable mid-conversation.
+  // Each message already renders conditionally on which fields it actually
+  // has (retrievalInfo vs. tasks/toolsUsed), not on a conversation-wide mode,
+  // so mixing pipelines within one conversation's history renders correctly.
+  const effectiveMode: ChatMode = selectedMode;
 
   function persist(nextConversations: Conversation[]) {
     setConversations(nextConversations);
@@ -220,7 +226,11 @@ export default function ChatPage() {
     const conversationIdSoFar = activeConversation?.id ?? null;
     // Live state, not frozen at conversation creation - retrieval strategy
     // and temperature can change per turn, same conversation or not.
-    const genaiRagOptions = { temperature, searchStrategy };
+    const genaiRagOptions = {
+      temperature,
+      searchStrategy,
+      lambdaMult: searchStrategy === "mmr" ? lambdaMult : undefined,
+    };
 
     try {
       let assistantMessage: ChatMessage;
@@ -370,16 +380,10 @@ export default function ChatPage() {
       >
         <div className="tuning-bar">
           <label htmlFor="mode-select">
-            Pipeline:
+            RAG Pipeline:
             <select
               id="mode-select"
               value={effectiveMode}
-              disabled={!!activeConversation && !ALLOW_PIPELINE_SWITCH_MID_CONVERSATION}
-              title={
-                activeConversation && !ALLOW_PIPELINE_SWITCH_MID_CONVERSATION
-                  ? "Set when this conversation started - start a new one to change it"
-                  : undefined
-              }
               onChange={(event) => setSelectedMode(event.target.value as ChatMode)}
             >
               {Object.entries(MODE_LABELS).map(([value, label]) => (
@@ -407,19 +411,40 @@ export default function ChatPage() {
                 ))}
               </select>
             </label>
+            {searchStrategy === "mmr" && (
+              <label htmlFor="lambda-mult-input">
+                Diversity (lambda):
+                <input
+                  id="lambda-mult-input"
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  value={lambdaMult}
+                  onChange={(event) => setLambdaMult(Number(event.target.value))}
+                  title="1.0 = pure relevance, 0.0 = pure diversity"
+                />
+              </label>
+            )}
             <label htmlFor="temperature-input">
               Temperature:
               <input
                 id="temperature-input"
                 type="number"
                 min={0}
-                max={2}
+                max={1}
                 step={0.1}
                 value={temperature}
                 onChange={(event) => setTemperature(Number(event.target.value))}
               />
             </label>
-            <p className="dev-note-inline">Applies to your next message in this conversation too.</p>
+            {embeddingModel && (
+              <label>
+                Embedding Model:
+                <input type="text" value={embeddingModel} readOnly disabled />
+              </label>
+            )}
+            <p className="dev-note-inline">Takes effect on your next message.</p>
           </div>
         )}
       </ConversationSidebar>
@@ -465,12 +490,20 @@ export default function ChatPage() {
 
         <div className="message-list">
           <div className="chat-column">
-            {(activeConversation?.messages ?? []).map((message) => (
+            {(activeConversation?.messages ?? []).map((message, index) => (
               <MessageBubble
                 key={message.id}
                 message={message}
                 onOpenFeedback={() => handleOpenFeedback(message.id)}
-                onExplain={() => setExplainTarget(message)}
+                onExplain={() => {
+                  setExplainTarget(message);
+                  const messages = activeConversation?.messages ?? [];
+                  const precedingUserMessage = messages
+                    .slice(0, index)
+                    .reverse()
+                    .find((candidate) => candidate.role === "user");
+                  setExplainQuery(precedingUserMessage?.text ?? null);
+                }}
               />
             ))}
             {isSending && (
@@ -499,9 +532,26 @@ export default function ChatPage() {
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={handleComposerKeyDown}
               placeholder="Ask about dental plans, PTO, 401(k)... (Enter to send, Shift+Enter for a new line)"
-              rows={1}
+              rows={2}
               disabled={isSending}
             />
+            <button
+              type="button"
+              className="mic-button"
+              title="Audio input (coming soon)"
+              aria-label="Audio input (coming soon)"
+              onClick={() => window.alert("Audio feature not available yet.")}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none">
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path
+                  d="M5 11a7 7 0 0 0 14 0h-2a5 5 0 0 1-10 0H5z"
+                  fillRule="evenodd"
+                />
+                <rect x="11" y="18" width="2" height="4" />
+                <rect x="8" y="21" width="8" height="1.5" rx="0.75" />
+              </svg>
+            </button>
             <button type="submit" disabled={isSending || !draft.trim()}>
               {isSending ? "Asking..." : "Send"}
             </button>
@@ -511,7 +561,9 @@ export default function ChatPage() {
 
       {feedbackTarget && <FeedbackModal onClose={() => setFeedbackTarget(null)} onSubmit={applyFeedback} />}
 
-      {explainTarget && <ExplainabilityModal message={explainTarget} onClose={() => setExplainTarget(null)} />}
+      {explainTarget && (
+        <ExplainabilityModal message={explainTarget} originalQuery={explainQuery} onClose={() => setExplainTarget(null)} />
+      )}
     </div>
   );
 }
