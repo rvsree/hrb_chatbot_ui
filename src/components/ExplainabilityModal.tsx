@@ -103,13 +103,85 @@ function chunkKey(source: RetrievedChunk): string {
   return `${source.document_id}-${source.chunk_index}`;
 }
 
-export default function ExplainabilityModal({ message, originalQuery, onClose }: ExplainabilityModalProps) {
+// Phase 136 - a deliberately small, separate view for a Chat GenAI Workflow
+// answer. No Knowledge Sources/Citations/LLM Context-with-chunk-attribution
+// sections - there is no vector store or persisted KB in this path, so
+// none of the main view's sections apply.
+function AdhocExplainability({ message, originalQuery, onClose }: ExplainabilityModalProps) {
+  const adhoc = message.adhoc!;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card explainability-card" onClick={(event) => event.stopPropagation()}>
+        <h2>Explainability - Chat GenAI Workflow</h2>
+        <p className="dev-note-inline">
+          Ad-hoc document chat - answered only from attached files, no knowledge base or vector store involved.
+        </p>
+
+        <div className="panel panel-success">
+          <span className="panel-eyebrow">User Query</span>
+          <p className="kb-query-text">{originalQuery ?? "Not available for this message."}</p>
+        </div>
+
+        <div className="panel panel-info">
+          <span className="panel-eyebrow">Files Read</span>
+          {adhoc.filesUsed.length > 0 ? (
+            <ul className="citation-list">
+              {adhoc.filesUsed.map((filename) => (
+                <li key={filename}>{filename}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>The agent answered without reading any attached file.</p>
+          )}
+        </div>
+
+        <div className="panel panel-info">
+          <span className="panel-eyebrow">Latency &amp; Tokens</span>
+          <ul className="citation-list">
+            <li>Total time: {adhoc.totalMs.toFixed(0)}ms</li>
+            <li>LLM calls: {adhoc.llmCallCount}</li>
+            <li>Reasoning steps: {adhoc.iterations}</li>
+            {message.modelUsed && <li>Model: {message.modelUsed}</li>}
+            {adhoc.tokenUsage ? (
+              <li>
+                Tokens: {adhoc.tokenUsage.prompt_tokens} prompt + {adhoc.tokenUsage.completion_tokens} completion ={" "}
+                {adhoc.tokenUsage.total_tokens} total
+              </li>
+            ) : (
+              <li>Tokens: n/a</li>
+            )}
+          </ul>
+        </div>
+
+        {adhoc.emailSentTo && (
+          <div className="panel panel-success">
+            <span className="panel-eyebrow">Email</span>
+            <p>Answer emailed to {adhoc.emailSentTo}.</p>
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ExplainabilityModal(props: ExplainabilityModalProps) {
+  const { message, originalQuery, onClose } = props;
   const { identity } = useIdentity();
   const knowledgeGroups = knowledgeSourceGroups(message);
   const llmContext = message.explainability?.llm_context;
   const sources = message.sources ?? [];
   const [selectedChunkKey, setSelectedChunkKey] = useState<string | null>(null);
   const selectedChunk = sources.find((source) => chunkKey(source) === selectedChunkKey) ?? null;
+
+  if (message.adhoc) {
+    return <AdhocExplainability {...props} />;
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
+  askAdhocDocumentChat,
   askAgenticQuery,
   askMultiAgenticQuery,
   askQuery,
@@ -36,6 +37,51 @@ const DEFAULT_LAMBDA_MULT = 0.5;
 
 const DEFAULT_TEMPERATURE = 0.0;
 
+// Phase 136 backend: MAX_FILES=3, ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES=10MB
+// (models/adhoc_chat.py) - mirrored here exactly, not guessed.
+const ADHOC_MAX_FILES = 3;
+const ADHOC_ALLOWED_EXTENSIONS = [".pdf", ".docx", ".csv"];
+const ADHOC_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
+interface AdhocFileRejection {
+  filename: string;
+  reason: string;
+}
+
+function isAdhocFileAllowed(file: File): boolean {
+  const lowerName = file.name.toLowerCase();
+  return ADHOC_ALLOWED_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+}
+
+function validateAndMergeAdhocFiles(
+  existing: File[],
+  incoming: File[],
+): { accepted: File[]; rejections: AdhocFileRejection[] } {
+  const accepted = [...existing];
+  const rejections: AdhocFileRejection[] = [];
+
+  for (const file of incoming) {
+    if (accepted.length >= ADHOC_MAX_FILES) {
+      rejections.push({ filename: file.name, reason: `At most ${ADHOC_MAX_FILES} files are allowed.` });
+      continue;
+    }
+    if (!isAdhocFileAllowed(file)) {
+      rejections.push({ filename: file.name, reason: "Only .pdf, .docx, .csv files are accepted." });
+      continue;
+    }
+    if (file.size > ADHOC_MAX_FILE_SIZE_BYTES) {
+      rejections.push({ filename: file.name, reason: `File is ${(file.size / 1024 / 1024).toFixed(1)}MB - the limit is 10MB.` });
+      continue;
+    }
+    const alreadyAdded = accepted.some((entry) => entry.name === file.name && entry.size === file.size);
+    if (!alreadyAdded) {
+      accepted.push(file);
+    }
+  }
+
+  return { accepted, rejections };
+}
+
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -61,6 +107,9 @@ export default function ChatPage() {
   const [explainTarget, setExplainTarget] = useState<ChatMessage | null>(null);
   const [explainQuery, setExplainQuery] = useState<string | null>(null);
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
+  const [adhocFiles, setAdhocFiles] = useState<File[]>([]);
+  const [adhocRejections, setAdhocRejections] = useState<AdhocFileRejection[]>([]);
+  const [adhocRecipientEmail, setAdhocRecipientEmail] = useState("");
   const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -205,6 +254,23 @@ export default function ChatPage() {
     }
   }
 
+  function handleAdhocFileSelect(event: ChangeEvent<HTMLInputElement>) {
+    const { accepted, rejections } = validateAndMergeAdhocFiles(adhocFiles, Array.from(event.target.files ?? []));
+    setAdhocFiles(accepted);
+    setAdhocRejections(rejections);
+    event.target.value = "";
+  }
+
+  function removeAdhocFile(fileToRemove: File) {
+    setAdhocFiles((current) => current.filter((file) => file !== fileToRemove));
+  }
+
+  function clearAdhocFiles() {
+    setAdhocFiles([]);
+    setAdhocRejections([]);
+    setAdhocRecipientEmail("");
+  }
+
   async function handleSend(event: FormEvent) {
     event.preventDefault();
     const query = draft.trim();
@@ -236,7 +302,30 @@ export default function ChatPage() {
       let assistantMessage: ChatMessage;
       let returnedConversationId: string | null;
 
-      if (mode === "genai-rag") {
+      if (adhocFiles.length > 0) {
+        // Chat GenAI Workflow (Phase 136) - files attached directly in the
+        // composer bypass the mode-based branching below entirely. Stays
+        // labeled "GenAI RAG" in the dropdown on purpose - attaching a
+        // file is what switches the actual call, not a new mode choice.
+        const response = await askAdhocDocumentChat(currentIdentity, query, adhocFiles, adhocRecipientEmail || undefined);
+        assistantMessage = {
+          id: makeId(),
+          role: "assistant",
+          text: response.answer,
+          createdAt: Date.now(),
+          modelUsed: response.model_used,
+          feedback: null,
+          adhoc: {
+            filesUsed: response.files_used,
+            emailSentTo: response.email_sent_to,
+            llmCallCount: response.llm_call_count,
+            iterations: response.iterations,
+            tokenUsage: response.token_usage,
+            totalMs: response.latency_ms.total,
+          },
+        };
+        returnedConversationId = null;
+      } else if (mode === "genai-rag") {
         const response = await askQuery(currentIdentity, query, conversationIdSoFar, genaiRagOptions);
         assistantMessage = {
           id: makeId(),
@@ -524,6 +613,49 @@ export default function ChatPage() {
           </div>
         )}
 
+        {(adhocFiles.length > 0 || adhocRejections.length > 0) && (
+          <div className="chat-column adhoc-panel">
+            {adhocFiles.length > 0 && (
+              <>
+                <p className="dev-note-inline">
+                  Attached - answered only from these files, not the HR knowledge base:
+                </p>
+                <ul className="file-queue">
+                  {adhocFiles.map((file) => (
+                    <li key={`${file.name}-${file.size}`}>
+                      {file.name}
+                      <button type="button" className="link-button" onClick={() => removeAdhocFile(file)}>
+                        remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <label className="adhoc-email-label">
+                  Email the answer to (optional):{" "}
+                  <input
+                    type="email"
+                    value={adhocRecipientEmail}
+                    onChange={(event) => setAdhocRecipientEmail(event.target.value)}
+                    placeholder="someone@example.com"
+                  />
+                </label>
+                <button type="button" className="link-button" onClick={clearAdhocFiles}>
+                  clear attached files
+                </button>
+              </>
+            )}
+            {adhocRejections.length > 0 && (
+              <ul className="file-queue">
+                {adhocRejections.map((rejection, index) => (
+                  <li key={`${rejection.filename}-${index}`} className="status-rejected">
+                    <strong>{rejection.filename}</strong>: {rejection.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <form className="composer" onSubmit={handleSend}>
           <div className="chat-column composer-row">
             <textarea
@@ -535,6 +667,19 @@ export default function ChatPage() {
               rows={2}
               disabled={isSending}
             />
+            <label className="mic-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48" />
+              </svg>
+              <input
+                type="file"
+                accept=".pdf,.docx,.csv"
+                multiple
+                hidden
+                onChange={handleAdhocFileSelect}
+                disabled={isSending}
+              />
+            </label>
             <button
               type="button"
               className="mic-button"

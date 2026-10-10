@@ -1,4 +1,5 @@
 import type {
+  AdhocDocumentChatResponse,
   AgenticRagResponse,
   ConversationDetailResponse,
   ConversationListResponse,
@@ -45,6 +46,33 @@ async function parseErrorAndThrow(response: Response): Promise<never> {
     // Response wasn't JSON - keep the generic message/code above.
   }
   throw new ApiRequestError(message, code, response.status);
+}
+
+export async function askAdhocDocumentChat(
+  userProfile: UserProfile,
+  question: string,
+  files: File[],
+  recipientEmail?: string,
+): Promise<AdhocDocumentChatResponse> {
+  const formData = new FormData();
+  formData.append("user_profile", JSON.stringify(userProfile));
+  formData.append("question", question);
+  if (recipientEmail) {
+    formData.append("recipient_email", recipientEmail);
+  }
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/v1/adhoc-document-chat/query`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdhocDocumentChatResponse;
 }
 
 export async function askQuery(

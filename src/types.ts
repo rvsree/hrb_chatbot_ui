@@ -90,6 +90,21 @@ export interface RagQueryResponse {
   conversation_id: string | null;
 }
 
+// Phase 136 (backend) - the Chat GenAI Workflow's own, deliberately small
+// response shape. No vector_db/search_strategy/citations - none apply,
+// there's no vector store or persisted KB in this path at all.
+export interface AdhocDocumentChatResponse {
+  question: string;
+  answer: string;
+  files_used: string[];
+  email_sent_to: string | null;
+  model_used: string;
+  iterations: number;
+  llm_call_count: number;
+  token_usage: TokenUsageInfo | null;
+  latency_ms: LatencyInfo;
+}
+
 export type UploadResultStatus = "uploaded" | "duplicate" | "rejected";
 
 export interface DocumentUploadResult {
@@ -199,6 +214,17 @@ export interface ChatMessage {
   tasks?: AgentTaskInfo[];
   explainability?: ExplainabilityInfo;
   retrievalInfo?: RetrievalInfo;
+  // Phase 136 - set only for an answer from the Chat GenAI Workflow
+  // (files attached directly in the composer) - no vector DB/MCP/web
+  // search, a different, much smaller Explainability view applies.
+  adhoc?: {
+    filesUsed: string[];
+    emailSentTo: string | null;
+    llmCallCount: number;
+    iterations: number;
+    tokenUsage: TokenUsageInfo | null;
+    totalMs: number;
+  };
 }
 
 export interface Conversation {

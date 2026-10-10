@@ -763,6 +763,31 @@ textarea:focus {
   color: var(--accent-contrast);
 }
 
+.adhoc-panel {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adhoc-email-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.adhoc-email-label input {
+  flex: 1;
+  min-width: 180px;
+}
+
 .composer-row textarea {
   flex: 1;
   border: none;
