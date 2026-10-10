@@ -103,6 +103,31 @@ function chunkKey(source: RetrievedChunk): string {
   return `${source.document_id}-${source.chunk_index}`;
 }
 
+// Phase 140: llm_call_count was one opaque total with no way to tell how
+// much of it was answer generation vs. eval (judge) calls vs. genai-rag's
+// own decomposition step - all derivable from fields already in the
+// response, no backend change needed. llm_context is only ever populated
+// for a fresh (non-cached, non-MCP-fast-path) genai-rag call (Phase 132 -
+// null on a cache hit, MCP fast-path, or single/multi-agentic-rag), so it
+// doubles as "was this a fresh genai-rag call" without needing the
+// conversation-level mode threaded into each message.
+function llmCallsBreakdownLabel(message: ChatMessage): string {
+  const explainability = message.explainability;
+  if (!explainability || explainability.llm_call_count === 0) {
+    return "";
+  }
+  const isFreshGenaiRagCall = explainability.llm_context !== null;
+  const evalCalls = explainability.eval_scores ? 2 : 0;
+  const decomposeCalls = isFreshGenaiRagCall ? 1 : 0;
+  const answerCalls = explainability.llm_call_count - decomposeCalls;
+
+  const parts = [`answer: ${answerCalls}`, `eval: ${evalCalls}`];
+  if (isFreshGenaiRagCall) {
+    parts.push(`decompose: ${decomposeCalls}`);
+  }
+  return ` (${parts.join(", ")})`;
+}
+
 // Phase 136 - a deliberately small, separate view for a Chat GenAI Workflow
 // answer. No Knowledge Sources/Citations/LLM Context-with-chunk-attribution
 // sections - there is no vector store or persisted KB in this path, so
@@ -239,7 +264,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                   {message.explainability.latency_ms.generation !== null && (
                     <li>Generation: {message.explainability.latency_ms.generation.toFixed(0)}ms</li>
                   )}
-                  <li>LLM calls: {message.explainability.llm_call_count}</li>
+                  <li>LLM calls: {message.explainability.llm_call_count}{llmCallsBreakdownLabel(message)}</li>
                   {message.iterations !== undefined && <li>Reasoning steps: {message.iterations}</li>}
                   {message.modelUsed && <li>Model: {message.modelUsed}</li>}
                   {message.explainability.temperature !== null && (
@@ -252,7 +277,9 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                       {message.explainability.token_usage.total_tokens} total
                     </li>
                   ) : (
-                    <li>Tokens: n/a (no LLM call this time)</li>
+                    <li>
+                      Tokens: n/a ({message.explainability.llm_call_count > 0 ? "not tracked per-agent yet" : "no LLM call made"})
+                    </li>
                   )}
                 </ul>
                 <p className="dev-note-inline">Dollar cost is intentionally out of scope - see BACKLOG.md.</p>
@@ -313,21 +340,31 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
               {llmContext.turns.length === 0 && llmContext.mcp_tool_calls.length === 0 && (
                 <p>Nothing captured for this answer.</p>
               )}
-              {llmContext.turns.map((turn, index) => (
+              {llmContext.turns.map((turn, index) => {
+                // Phase 140: the reviewer-merge turn isn't a sub-question -
+                // it's the extra LLM call that combines the other turns'
+                // answers into one response. Badge it "Merge" instead of
+                // "Q{n}" and skip the "Question:" line (there isn't one),
+                // matching the label convention pipeline.py writes
+                // ("Merging N sub-answers into one response").
+                const isMergeTurn = turn.label.startsWith("Merging ");
+                return (
                 <CollapsibleSection
                   key={`${turn.label}-${index}`}
                   nested
                   defaultOpen={llmContext.turns.length === 1}
                   title={
                     <>
-                      <span className="kb-chunk-sequence">Q{index + 1}</span> {turn.label}
+                      <span className="kb-chunk-sequence">{isMergeTurn ? "Merge" : `Q${index + 1}`}</span> {turn.label}
                     </>
                   }
                 >
-                  <div className="llm-context-block">
-                    <span className="dev-note-inline">Question:</span>
-                    <p>{turn.label}</p>
-                  </div>
+                  {!isMergeTurn && (
+                    <div className="llm-context-block">
+                      <span className="dev-note-inline">Question:</span>
+                      <p>{turn.label}</p>
+                    </div>
+                  )}
                   {turn.chat_history.length > 0 && (
                     <div className="llm-context-block">
                       <span className="dev-note-inline">Chat history sent:</span>
@@ -348,9 +385,12 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                       <pre className="llm-context-pre">{turn.human_message}</pre>
                     </div>
                   )}
-                  {turn.system_prompt === null && turn.human_message === null && (
+                  {turn.system_prompt === null && turn.human_message === null && !isMergeTurn && (
+                    <p className="dev-note-inline">Prompt not captured for this turn.</p>
+                  )}
+                  {isMergeTurn && (
                     <p className="dev-note-inline">
-                      {turn.label.includes("not yet built") ? "" : "Prompt not captured for this turn."}
+                      A separate LLM call combining the other turns' answers into one response - its own prompt isn't captured yet, only its output below.
                     </p>
                   )}
                   {turn.response && (
@@ -359,26 +399,29 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                       <pre className="llm-context-pre">{turn.response}</pre>
                     </div>
                   )}
-                  <div className="llm-context-block">
-                    <span className="dev-note-inline">Response KB source:</span>
-                    {llmContext.turns.length === 1 && sources.length > 0 ? (
-                      <ul className="citation-list">
-                        {sources.map((source) => (
-                          <li key={chunkKey(source)}>
-                            {source.filename}, chunk {source.chunk_index}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="dev-note-inline">
-                        {sources.length === 0
-                          ? "No chunks retrieved for this answer."
-                          : "Per-sub-question chunk attribution isn't tracked yet - see Citations below for the full retrieved set across all sub-questions."}
-                      </p>
-                    )}
-                  </div>
+                  {!isMergeTurn && (
+                    <div className="llm-context-block">
+                      <span className="dev-note-inline">Response KB source:</span>
+                      {llmContext.turns.length === 1 && sources.length > 0 ? (
+                        <ul className="citation-list">
+                          {sources.map((source) => (
+                            <li key={chunkKey(source)}>
+                              {source.filename}, chunk {source.chunk_index}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="dev-note-inline">
+                          {sources.length === 0
+                            ? "No chunks retrieved for this answer."
+                            : "Per-sub-question chunk attribution isn't tracked yet - see Citations below for the full retrieved set across all sub-questions."}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </CollapsibleSection>
-              ))}
+                );
+              })}
               {llmContext.mcp_tool_calls.map((call, index) => (
                 <CollapsibleSection
                   key={`${call.tool_name}-${index}`}

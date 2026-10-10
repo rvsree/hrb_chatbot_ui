@@ -473,7 +473,13 @@ export default function ChatPage() {
             <select
               id="mode-select"
               value={effectiveMode}
-              onChange={(event) => setSelectedMode(event.target.value as ChatMode)}
+              onChange={(event) => {
+                setSelectedMode(event.target.value as ChatMode);
+                // Phase 140: the attach control only shows in GenAI RAG mode
+                // (see composer below) - clear any already-attached files so
+                // they don't linger, hidden, attached to a mode that can't use them.
+                clearAdhocFiles();
+              }}
             >
               {Object.entries(MODE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -678,19 +684,24 @@ export default function ChatPage() {
               rows={2}
               disabled={isSending}
             />
-            <label className="mic-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48" />
-              </svg>
-              <input
-                type="file"
-                accept=".pdf,.docx,.csv"
-                multiple
-                hidden
-                onChange={handleAdhocFileSelect}
-                disabled={isSending}
-              />
-            </label>
+            {/* Phase 140: ad-hoc document chat only ever wires to GenAI RAG
+                mode - hide the control entirely rather than let a user
+                attach a file while a mode that can't use it is selected. */}
+            {selectedMode === "genai-rag" && (
+              <label className="mic-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48" />
+                </svg>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.csv"
+                  multiple
+                  hidden
+                  onChange={handleAdhocFileSelect}
+                  disabled={isSending}
+                />
+              </label>
+            )}
             <button
               type="button"
               className="mic-button"
