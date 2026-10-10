@@ -763,15 +763,16 @@ textarea:focus {
   color: var(--accent-contrast);
 }
 
+/* Phase 139: layout-only now - box/border/collapse styling comes from the
+   shared .explainability-section rules this element also carries. */
 .adhoc-panel {
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
+  margin-top: 0;
   margin-bottom: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+}
+
+.adhoc-panel .file-queue,
+.adhoc-panel .adhoc-email-label {
+  margin-top: 8px;
 }
 
 .adhoc-email-label {

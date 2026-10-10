@@ -614,45 +614,56 @@ export default function ChatPage() {
         )}
 
         {(adhocFiles.length > 0 || adhocRejections.length > 0) && (
-          <div className="chat-column adhoc-panel">
-            {adhocFiles.length > 0 && (
-              <>
-                <p className="dev-note-inline">
-                  Attached - answered only from these files, not the HR knowledge base:
-                </p>
-                <ul className="file-queue">
-                  {adhocFiles.map((file) => (
-                    <li key={`${file.name}-${file.size}`}>
-                      {file.name}
-                      <button type="button" className="link-button" onClick={() => removeAdhocFile(file)}>
-                        remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <label className="adhoc-email-label">
-                  Email the answer to (optional):{" "}
-                  <input
-                    type="email"
-                    value={adhocRecipientEmail}
-                    onChange={(event) => setAdhocRecipientEmail(event.target.value)}
-                    placeholder="someone@example.com"
-                  />
-                </label>
-                <button type="button" className="link-button" onClick={clearAdhocFiles}>
-                  clear attached files
-                </button>
-              </>
-            )}
-            {adhocRejections.length > 0 && (
-              <ul className="file-queue">
-                {adhocRejections.map((rejection, index) => (
-                  <li key={`${rejection.filename}-${index}`} className="status-rejected">
-                    <strong>{rejection.filename}</strong>: {rejection.reason}
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div className="chat-column">
+            {/* Phase 139: collapsed by default - a full file list + email field
+                was crowding the response area directly above it. Same
+                <details>/<summary> pattern as ExplainabilityModal's
+                CollapsibleSection, reusing its CSS classes for visual
+                consistency rather than a new component. */}
+            <details className="explainability-section adhoc-panel">
+              <summary>
+                {adhocFiles.length > 0
+                  ? `Attached: ${adhocFiles.length} file(s) - answered only from these, not the HR knowledge base`
+                  : `${adhocRejections.length} file(s) rejected`}
+              </summary>
+              <div className="explainability-section-body">
+                {adhocFiles.length > 0 && (
+                  <>
+                    <ul className="file-queue">
+                      {adhocFiles.map((file) => (
+                        <li key={`${file.name}-${file.size}`}>
+                          {file.name}
+                          <button type="button" className="link-button" onClick={() => removeAdhocFile(file)}>
+                            remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <label className="adhoc-email-label">
+                      Email the answer to (optional):{" "}
+                      <input
+                        type="email"
+                        value={adhocRecipientEmail}
+                        onChange={(event) => setAdhocRecipientEmail(event.target.value)}
+                        placeholder="someone@example.com"
+                      />
+                    </label>
+                    <button type="button" className="link-button" onClick={clearAdhocFiles}>
+                      clear attached files
+                    </button>
+                  </>
+                )}
+                {adhocRejections.length > 0 && (
+                  <ul className="file-queue">
+                    {adhocRejections.map((rejection, index) => (
+                      <li key={`${rejection.filename}-${index}`} className="status-rejected">
+                        <strong>{rejection.filename}</strong>: {rejection.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </details>
           </div>
         )}
 
