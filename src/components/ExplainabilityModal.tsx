@@ -111,21 +111,32 @@ function chunkKey(source: RetrievedChunk): string {
 // null on a cache hit, MCP fast-path, or single/multi-agentic-rag), so it
 // doubles as "was this a fresh genai-rag call" without needing the
 // conversation-level mode threaded into each message.
-function llmCallsBreakdownLabel(message: ChatMessage): string {
+//
+// llm_call_count itself EXCLUDES eval calls (models/rag.py's own field
+// description says so) - the first shipped version of this function
+// quietly re-displayed that partial count as if it were the grand total
+// right next to a breakdown that implied otherwise ("LLM calls: 4
+// (answer: 4, eval: 2)" - a real, reported bug, 4+2=6 not 4). The headline
+// number shown must be the true sum of every part in the breakdown.
+function describeLlmCalls(message: ChatMessage): string {
   const explainability = message.explainability;
-  if (!explainability || explainability.llm_call_count === 0) {
-    return "";
+  if (!explainability) {
+    return "0";
+  }
+  if (explainability.llm_call_count === 0) {
+    return "0";
   }
   const isFreshGenaiRagCall = explainability.llm_context !== null;
   const evalCalls = explainability.eval_scores ? 2 : 0;
   const decomposeCalls = isFreshGenaiRagCall ? 1 : 0;
   const answerCalls = explainability.llm_call_count - decomposeCalls;
+  const total = explainability.llm_call_count + evalCalls;
 
   const parts = [`answer: ${answerCalls}`, `eval: ${evalCalls}`];
   if (isFreshGenaiRagCall) {
     parts.push(`decompose: ${decomposeCalls}`);
   }
-  return ` (${parts.join(", ")})`;
+  return `${total} (${parts.join(", ")})`;
 }
 
 // Phase 136 - a deliberately small, separate view for a Chat GenAI Workflow
@@ -264,7 +275,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                   {message.explainability.latency_ms.generation !== null && (
                     <li>Generation: {message.explainability.latency_ms.generation.toFixed(0)}ms</li>
                   )}
-                  <li>LLM calls: {message.explainability.llm_call_count}{llmCallsBreakdownLabel(message)}</li>
+                  <li>LLM calls: {describeLlmCalls(message)}</li>
                   {message.iterations !== undefined && <li>Reasoning steps: {message.iterations}</li>}
                   {message.modelUsed && <li>Model: {message.modelUsed}</li>}
                   {message.explainability.temperature !== null && (

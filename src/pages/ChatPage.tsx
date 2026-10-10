@@ -490,7 +490,21 @@ export default function ChatPage() {
           </label>
         </div>
 
-        {effectiveMode === "genai-rag" && (
+        {/* Phase 140: when files are attached, the next message routes to
+            the ad-hoc document chat endpoint (askAdhocDocumentChat), which
+            sends only user_profile/question/files - none of these
+            retrieval settings. Showing them as active/editable while
+            they'd be silently ignored was the real "Settings behavior
+            isn't correct" issue - a short note replaces them instead. */}
+        {effectiveMode === "genai-rag" && adhocFiles.length > 0 && (
+          <div className="tuning-bar">
+            <p className="dev-note-inline">
+              Retrieval/Temperature/Embedding Model don't apply here - the attached file(s) are read directly, skipping the knowledge base entirely.
+            </p>
+          </div>
+        )}
+
+        {effectiveMode === "genai-rag" && adhocFiles.length === 0 && (
           <div className="tuning-bar">
             <label htmlFor="search-strategy-select">
               Retrieval:
