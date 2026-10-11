@@ -31,6 +31,28 @@ export class ApiRequestError extends Error {
   }
 }
 
+// Phase 157 - a 422's real, specific reason (e.g. "chunk_size: Input should
+// be greater than or equal to 200") lives in FastAPI/Pydantic's own
+// `details` array, which this function used to ignore entirely in favor of
+// the generic top-level `error` string ("Request validation failed.") -
+// exactly the unhelpful message the user reported.
+function describeValidationDetail(detail: unknown): string {
+  if (typeof detail !== "object" || detail === null) {
+    return String(detail);
+  }
+  const record = detail as { loc?: unknown[]; msg?: unknown; input?: unknown };
+  const field = Array.isArray(record.loc) && record.loc.length > 0 ? record.loc[record.loc.length - 1] : "value";
+  // Pydantic prefixes a @model_validator's own raised ValueError with
+  // "Value error, " - redundant once it's already labeled by field below.
+  const rawMsg = typeof record.msg === "string" ? record.msg : "is invalid";
+  const msg = rawMsg.startsWith("Value error, ") ? rawMsg.slice("Value error, ".length) : rawMsg;
+  // A model-level validator's `input` is the whole submitted object, not
+  // one value - showing that as "(got {...})" is noise, not help.
+  const isPrimitive = record.input === null || typeof record.input !== "object";
+  const gotSuffix = isPrimitive && record.input !== undefined ? ` (got ${JSON.stringify(record.input)})` : "";
+  return `${field}: ${msg}${gotSuffix}`;
+}
+
 async function parseErrorAndThrow(response: Response): Promise<never> {
   let message = `Request failed with status ${response.status}`;
   let code = "UNKNOWN_ERROR";
@@ -38,6 +60,9 @@ async function parseErrorAndThrow(response: Response): Promise<never> {
     const body = await response.json();
     if (body && typeof body.error === "string") {
       message = body.error;
+    }
+    if (body && Array.isArray(body.details) && body.details.length > 0) {
+      message = body.details.map(describeValidationDetail).join("; ");
     }
     if (body && typeof body.code === "string") {
       code = body.code;
@@ -276,13 +301,26 @@ export async function rechunkDocument(
   userProfile: UserProfile,
   documentId: string,
   chunkingStrategy: string,
+  chunkSize?: number,
+  chunkOverlap?: number,
 ): Promise<DocumentUploadResult> {
+  // Phase 156 - chunk_size/chunk_overlap are now user-editable (previously
+  // always omitted, letting the backend auto-pick a size). Omitted here
+  // when not given, so the backend's own auto-selection still applies.
+  const chunkInfo: Record<string, string | number> = { chunking_strategy: chunkingStrategy };
+  if (chunkSize !== undefined) {
+    chunkInfo.chunk_size = chunkSize;
+  }
+  if (chunkOverlap !== undefined) {
+    chunkInfo.chunk_overlap = chunkOverlap;
+  }
+
   const response = await fetch(`${API_BASE_URL}/v1/genai-rag/ingest-document/documents/${documentId}/rechunk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       user_profile: userProfile,
-      chunk_info: { chunking_strategy: chunkingStrategy },
+      chunk_info: chunkInfo,
     }),
   });
 

@@ -12,6 +12,7 @@ import {
   submitFeedback,
   ApiRequestError,
 } from "../api/client";
+import ConfirmModal from "../components/ConfirmModal";
 import ConversationSidebar from "../components/ConversationSidebar";
 import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
@@ -31,6 +32,17 @@ const SEARCH_STRATEGY_LABELS: Record<SearchStrategy, string> = {
   mmr: "MMR",
   keyword: "Keyword",
   hybrid: "Hybrid",
+};
+
+// Phase 153 - concise, one entry per retrieval strategy, shown in the "?" popover below the dropdown.
+const SEARCH_STRATEGY_HELP: Record<SearchStrategy, string> = {
+  similarity:
+    "Ranks chunks by meaning-based relevance to your question (vector similarity). Fast, and the default - best for most questions, but can return several chunks covering the same point if the knowledge base repeats it.",
+  mmr: "Also ranks by relevance, but actively avoids picking chunks too similar to ones already chosen - trades a little pure relevance for broader topic coverage. The Diversity (lambda) slider controls the balance: 1.0 = pure relevance, 0.0 = pure diversity.",
+  keyword:
+    "Ranks by exact word/acronym overlap (BM25), not meaning. Best when your question uses specific terms, codes, or acronyms a meaning-based search might miss.",
+  hybrid:
+    "Combines Keyword and Semantic Search results into one ranked list. Usually the most robust choice - catches both exact-term and meaning-based matches - at the cost of running both searches.",
 };
 
 const DEFAULT_LAMBDA_MULT = 0.5;
@@ -96,10 +108,20 @@ export default function ChatPage() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [selectedMode, setSelectedMode] = useState<ChatMode>("genai-rag");
+  // Phase 143: replaces window.confirm() for conversation delete - same
+  // reported "browser warning" look as the document-delete confirms.
+  const [deleteConversationTarget, setDeleteConversationTarget] = useState<string | null>(null);
+  // Phase 157 - user-directed default, was "genai-rag".
+  const [selectedMode, setSelectedMode] = useState<ChatMode>("multi-agentic-rag");
+  // Phase 141: a separate on/off switch for the ad-hoc document chat
+  // feature itself, independent of which RAG Pipeline mode is selected -
+  // the attach control only shows when this is checked AND GenAI RAG mode
+  // is active (both conditions, not one replacing the other).
+  const [adhocChatEnabled, setAdhocChatEnabled] = useState(true);
   const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE);
   const [searchStrategy, setSearchStrategy] = useState<SearchStrategy>("similarity");
   const [lambdaMult, setLambdaMult] = useState(DEFAULT_LAMBDA_MULT);
+  const [showRetrievalHelp, setShowRetrievalHelp] = useState(false);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -230,8 +252,14 @@ export default function ChatPage() {
     }
   }
 
-  async function handleDeleteConversation(conversationId: string) {
-    if (!window.confirm("Delete this conversation? This can't be undone.")) {
+  function handleDeleteConversation(conversationId: string) {
+    setDeleteConversationTarget(conversationId);
+  }
+
+  async function handleConfirmDeleteConversation() {
+    const conversationId = deleteConversationTarget;
+    setDeleteConversationTarget(null);
+    if (!conversationId) {
       return;
     }
     try {
@@ -317,6 +345,7 @@ export default function ChatPage() {
           feedback: null,
           adhoc: {
             filesUsed: response.files_used,
+            webSearches: response.web_searches,
             emailSentTo: response.email_sent_to,
             llmCallCount: response.llm_call_count,
             iterations: response.iterations,
@@ -490,72 +519,110 @@ export default function ChatPage() {
           </label>
         </div>
 
-        {/* Phase 140: when files are attached, the next message routes to
-            the ad-hoc document chat endpoint (askAdhocDocumentChat), which
-            sends only user_profile/question/files - none of these
-            retrieval settings. Showing them as active/editable while
-            they'd be silently ignored was the real "Settings behavior
-            isn't correct" issue - a short note replaces them instead. */}
-        {effectiveMode === "genai-rag" && adhocFiles.length > 0 && (
+        {/* Phase 144: fixes a real misread from Phase 142's own follow-up
+            instruction. "this control" in that feedback meant the
+            checkbox specifically (it's named right before that phrase) -
+            not the whole settings block. Only the checkbox is genai-rag-
+            only (ad-hoc chat doesn't exist in single/multi-agentic-rag at
+            all); Retrieval/Temperature/Embedding Model render
+            unconditionally in every mode now, full stop - no hiding, no
+            disabling, no explanatory note. This was the user's original,
+            repeated, and consistent request since Phase 141 - Phase 142
+            wrongly reversed it instead of just dropping the note text. */}
+        {effectiveMode === "genai-rag" && (
           <div className="tuning-bar">
-            <p className="dev-note-inline">
-              Retrieval/Temperature/Embedding Model don't apply here - the attached file(s) are read directly, skipping the knowledge base entirely.
-            </p>
+            <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
+              <input
+                id="adhoc-chat-enabled-checkbox"
+                type="checkbox"
+                checked={adhocChatEnabled}
+                onChange={(event) => {
+                  setAdhocChatEnabled(event.target.checked);
+                  // Mirrors the mode-switch cleanup above - don't leave files
+                  // attached, hidden, to a feature that's now turned off.
+                  if (!event.target.checked) {
+                    clearAdhocFiles();
+                  }
+                }}
+              />
+              Enable GenAI Chat Workflow (attach files to ask about directly)
+            </label>
           </div>
         )}
 
-        {effectiveMode === "genai-rag" && adhocFiles.length === 0 && (
-          <div className="tuning-bar">
-            <label htmlFor="search-strategy-select">
+        <div className="tuning-bar">
+          <label htmlFor="search-strategy-select">
+            <span className="tuning-label-row">
               Retrieval:
-              <select
-                id="search-strategy-select"
-                value={searchStrategy}
-                onChange={(event) => setSearchStrategy(event.target.value as SearchStrategy)}
+              <button
+                type="button"
+                className="chunking-help-button"
+                aria-label="What do these retrieval strategies mean?"
+                title="What do these retrieval strategies mean?"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setShowRetrievalHelp((current) => !current);
+                }}
               >
-                {Object.entries(SEARCH_STRATEGY_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {searchStrategy === "mmr" && (
-              <label htmlFor="lambda-mult-input">
-                Diversity (lambda):
-                <input
-                  id="lambda-mult-input"
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={lambdaMult}
-                  onChange={(event) => setLambdaMult(Number(event.target.value))}
-                  title="1.0 = pure relevance, 0.0 = pure diversity"
-                />
-              </label>
-            )}
-            <label htmlFor="temperature-input">
-              Temperature:
+                ?
+              </button>
+            </span>
+            <select
+              id="search-strategy-select"
+              value={searchStrategy}
+              onChange={(event) => setSearchStrategy(event.target.value as SearchStrategy)}
+            >
+              {Object.entries(SEARCH_STRATEGY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {showRetrievalHelp && (
+            <div className="chunking-help-popover">
+              {Object.entries(SEARCH_STRATEGY_LABELS).map(([value, label]) => (
+                <p key={value}>
+                  <strong>{label}:</strong> {SEARCH_STRATEGY_HELP[value as SearchStrategy]}
+                </p>
+              ))}
+            </div>
+          )}
+          {searchStrategy === "mmr" && (
+            <label htmlFor="lambda-mult-input">
+              Diversity (lambda):
               <input
-                id="temperature-input"
+                id="lambda-mult-input"
                 type="number"
                 min={0}
                 max={1}
                 step={0.1}
-                value={temperature}
-                onChange={(event) => setTemperature(Number(event.target.value))}
+                value={lambdaMult}
+                onChange={(event) => setLambdaMult(Number(event.target.value))}
+                title="1.0 = pure relevance, 0.0 = pure diversity"
               />
             </label>
-            {embeddingModel && (
-              <label>
-                Embedding Model:
-                <input type="text" value={embeddingModel} readOnly disabled />
-              </label>
-            )}
-            <p className="dev-note-inline">Takes effect on your next message.</p>
-          </div>
-        )}
+          )}
+          <label htmlFor="temperature-input">
+            Temperature:
+            <input
+              id="temperature-input"
+              type="number"
+              min={0}
+              max={1}
+              step={0.1}
+              value={temperature}
+              onChange={(event) => setTemperature(Number(event.target.value))}
+            />
+          </label>
+          {embeddingModel && (
+            <label>
+              Embedding Model:
+              <input type="text" value={embeddingModel} readOnly disabled />
+            </label>
+          )}
+          <p className="dev-note-inline">Takes effect on your next message.</p>
+        </div>
       </ConversationSidebar>
 
       <div className="chat-main">
@@ -698,10 +765,12 @@ export default function ChatPage() {
               rows={2}
               disabled={isSending}
             />
-            {/* Phase 140: ad-hoc document chat only ever wires to GenAI RAG
-                mode - hide the control entirely rather than let a user
-                attach a file while a mode that can't use it is selected. */}
-            {selectedMode === "genai-rag" && (
+            {/* Phase 140/141: ad-hoc document chat only ever wires to GenAI
+                RAG mode - hide the control entirely rather than let a user
+                attach a file while a mode that can't use it is selected.
+                Phase 141 adds a second, independent gate: the "Enable
+                GenAI Chat Workflow" checkbox above. Both must be true. */}
+            {selectedMode === "genai-rag" && adhocChatEnabled && (
               <label className="mic-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48" />
@@ -741,6 +810,15 @@ export default function ChatPage() {
 
       {explainTarget && (
         <ExplainabilityModal message={explainTarget} originalQuery={explainQuery} onClose={() => setExplainTarget(null)} />
+      )}
+
+      {deleteConversationTarget && (
+        <ConfirmModal
+          title="Delete conversation"
+          message="Delete this conversation? This can't be undone."
+          onConfirm={handleConfirmDeleteConversation}
+          onCancel={() => setDeleteConversationTarget(null)}
+        />
       )}
     </div>
   );

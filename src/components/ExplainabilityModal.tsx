@@ -150,7 +150,7 @@ function AdhocExplainability({ message, originalQuery, onClose }: Explainability
       <div className="modal-card explainability-card" onClick={(event) => event.stopPropagation()}>
         <h2>Explainability - Chat GenAI Workflow</h2>
         <p className="dev-note-inline">
-          Ad-hoc document chat - answered only from attached files, no knowledge base or vector store involved.
+          Ad-hoc document chat - answered from attached files{adhoc.webSearches.length > 0 ? " and the web" : ""}, no knowledge base or vector store involved.
         </p>
 
         <div className="panel panel-success">
@@ -158,16 +158,37 @@ function AdhocExplainability({ message, originalQuery, onClose }: Explainability
           <p className="kb-query-text">{originalQuery ?? "Not available for this message."}</p>
         </div>
 
+        {/* Phase 145: renamed from "Files Read" now that SearchWeb exists -
+            shown as two labeled groups, same pattern the main Explainability
+            view already uses for its own Knowledge Sources panel, rather
+            than inventing a new layout for this one. */}
         <div className="panel panel-info">
-          <span className="panel-eyebrow">Files Read</span>
-          {adhoc.filesUsed.length > 0 ? (
-            <ul className="citation-list">
-              {adhoc.filesUsed.map((filename) => (
-                <li key={filename}>{filename}</li>
-              ))}
-            </ul>
+          <span className="panel-eyebrow">Knowledge Sources</span>
+          {adhoc.filesUsed.length === 0 && adhoc.webSearches.length === 0 ? (
+            <p>The agent answered without reading any attached file or searching the web.</p>
           ) : (
-            <p>The agent answered without reading any attached file.</p>
+            <>
+              {adhoc.filesUsed.length > 0 && (
+                <div className="knowledge-source-group">
+                  <span className="dev-note-inline">Files ({adhoc.filesUsed.length})</span>
+                  <ul className="citation-list">
+                    {adhoc.filesUsed.map((filename) => (
+                      <li key={filename}>{filename}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {adhoc.webSearches.length > 0 && (
+                <div className="knowledge-source-group">
+                  <span className="dev-note-inline">Web Search ({adhoc.webSearches.length})</span>
+                  <ul className="citation-list">
+                    {adhoc.webSearches.map((query, index) => (
+                      <li key={`${query}-${index}`}>{query}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </div>
 

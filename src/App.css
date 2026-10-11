@@ -295,7 +295,12 @@ textarea:focus {
 }
 
 .sidebar-section-chevron {
-  font-size: 10px;
+  /* Phase 153: was 10px with no explicit color - inherited text color left
+     it nearly invisible against the sidebar's dark background. Phase 157:
+     15px still read as too small - bumped again, bolder too. */
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 .sidebar-section-body {
@@ -496,11 +501,34 @@ textarea:focus {
   gap: 4px;
 }
 
+/* Phase 153 - the "?" help button sits next to a label's own text, not
+   stacked below it like the rest of .tuning-bar's column layout. */
+.tuning-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
 .tuning-bar select,
 .tuning-bar input {
   width: 100%;
   font-size: 12px;
   padding: 6px 8px;
+}
+
+/* Phase 141: the "Enable GenAI Chat Workflow" checkbox - row layout, not
+   the stacked column every other .tuning-bar label uses, and the
+   checkbox itself must not stretch to the full-width rule above. */
+.tuning-bar label.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.tuning-bar label.checkbox-label input[type="checkbox"] {
+  width: auto;
+  padding: 0;
 }
 
 .message {
@@ -972,6 +1000,12 @@ textarea:focus {
 .explainability-section summary::before {
   content: "▸";
   display: inline-block;
+  /* Phase 153: was unset (inherited summary's 13px, easy to miss as an
+     expand/collapse affordance) - sized and colored explicitly instead.
+     Phase 157: 15px still read as too small - bumped again, bolder too. */
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-muted);
   margin-right: 8px;
   transition: transform 0.15s ease;
 }
@@ -1148,6 +1182,123 @@ textarea:focus {
 
 .documents-card {
   max-width: 1200px;
+}
+
+/* Phase 142: replaces window.confirm() for the chunking-strategy change -
+   anchored inline inside that row's own cell (position: relative on the
+   cell, absolute here) instead of a full-page overlay or unstyled native
+   dialog, so it visually appears right where the user picked a strategy. */
+.chunking-strategy-cell {
+  position: relative;
+}
+
+/* Phase 156 - same anchored-popover pattern, but on a <th> for the Chunk
+   size/overlap column's own help, not a per-row cell. */
+.chunk-size-header {
+  position: relative;
+}
+
+/* Phase 158 - the header text and "?" button were raw inline siblings with
+   no gap, so the button crowded/overlapped "Overlap" when the column
+   wrapped to 2 lines. A proper flex row keeps a fixed gap regardless of
+   wrapping. */
+.chunk-size-header-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chunk-size-help-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 280px;
+  box-shadow: var(--shadow-lg);
+  font-weight: 400;
+  text-transform: none;
+}
+
+.chunking-confirm-size-row {
+  display: flex;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.chunking-confirm-size-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  flex: 1;
+}
+
+.chunking-confirm-size-row input {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.chunking-confirm-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 14px;
+  font-size: 13px;
+  text-align: left;
+  white-space: normal;
+}
+
+.chunking-confirm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.chunking-help-button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--gold);
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.chunking-help-popover {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.chunking-help-popover p {
+  margin: 0;
+}
+
+.chunking-help-popover p + p {
+  margin-top: 8px;
+}
+
+.chunking-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .documents-bulk-actions {

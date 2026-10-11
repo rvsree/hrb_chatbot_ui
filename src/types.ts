@@ -97,6 +97,10 @@ export interface AdhocDocumentChatResponse {
   question: string;
   answer: string;
   files_used: string[];
+  // Phase 145 - which queries the agent actually ran via SearchWeb,
+  // reusing multi-agentic-rag's existing Tavily integration. Empty when
+  // the question didn't need the web.
+  web_searches: string[];
   email_sent_to: string | null;
   model_used: string;
   iterations: number;
@@ -215,10 +219,13 @@ export interface ChatMessage {
   explainability?: ExplainabilityInfo;
   retrievalInfo?: RetrievalInfo;
   // Phase 136 - set only for an answer from the Chat GenAI Workflow
-  // (files attached directly in the composer) - no vector DB/MCP/web
-  // search, a different, much smaller Explainability view applies.
+  // (files attached directly in the composer) - no vector DB/MCP access,
+  // a different, much smaller Explainability view applies. Phase 145
+  // added SearchWeb (reusing multi-agentic-rag's Tavily integration) as
+  // this pipeline's one deliberate exception - still no vector DB/MCP.
   adhoc?: {
     filesUsed: string[];
+    webSearches: string[];
     emailSentTo: string | null;
     llmCallCount: number;
     iterations: number;
