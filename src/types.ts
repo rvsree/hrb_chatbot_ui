@@ -90,6 +90,18 @@ export interface RagQueryResponse {
   conversation_id: string | null;
 }
 
+// Phase 161 - real evidence of one SendEmailWithAnswer attempt, sent or
+// failed, so a failure (e.g. SES_SENDER_EMAIL not configured) is visible
+// instead of indistinguishable from "no email asked for at all".
+export interface EmailEvidence {
+  recipient_email: string;
+  subject: string;
+  sent: boolean;
+  message: string;
+  attached_files: string[];
+  sent_at: string;
+}
+
 // Phase 136 (backend) - the Chat GenAI Workflow's own, deliberately small
 // response shape. No vector_db/search_strategy/citations - none apply,
 // there's no vector store or persisted KB in this path at all.
@@ -102,6 +114,7 @@ export interface AdhocDocumentChatResponse {
   // the question didn't need the web.
   web_searches: string[];
   email_sent_to: string | null;
+  email_evidence: EmailEvidence | null;
   model_used: string;
   iterations: number;
   llm_call_count: number;
@@ -227,6 +240,9 @@ export interface ChatMessage {
     filesUsed: string[];
     webSearches: string[];
     emailSentTo: string | null;
+    // Phase 161 - sent OR failed evidence of the SendEmailWithAnswer
+    // attempt; null only when no email was requested at all this turn.
+    emailEvidence: EmailEvidence | null;
     llmCallCount: number;
     iterations: number;
     tokenUsage: TokenUsageInfo | null;

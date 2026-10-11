@@ -347,6 +347,7 @@ export default function ChatPage() {
             filesUsed: response.files_used,
             webSearches: response.web_searches,
             emailSentTo: response.email_sent_to,
+            emailEvidence: response.email_evidence,
             llmCallCount: response.llm_call_count,
             iterations: response.iterations,
             tokenUsage: response.token_usage,

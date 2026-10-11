@@ -210,11 +210,41 @@ function AdhocExplainability({ message, originalQuery, onClose }: Explainability
           </ul>
         </div>
 
-        {adhoc.emailSentTo && (
-          <div className="panel panel-success">
-            <span className="panel-eyebrow">Email</span>
-            <p>Answer emailed to {adhoc.emailSentTo}.</p>
-          </div>
+        {/* Phase 161 - shown whenever SendEmailWithAnswer was called at all,
+            sent or failed, so a failure (e.g. SES_SENDER_EMAIL not
+            configured) is visible instead of indistinguishable from "no
+            email asked for at all". Defaults open on a failure - the user
+            shouldn't have to know to expand it to find out why nothing
+            arrived - and closed on a quiet success. */}
+        {adhoc.emailEvidence && (
+          <CollapsibleSection
+            title={
+              <>
+                Email{" "}
+                <span
+                  className={adhoc.emailEvidence.sent ? "knowledge-source-group-label" : "knowledge-source-failed"}
+                >
+                  {adhoc.emailEvidence.sent ? "sent" : "failed"}
+                </span>
+              </>
+            }
+            defaultOpen={!adhoc.emailEvidence.sent}
+          >
+            <div className={adhoc.emailEvidence.sent ? "panel panel-success" : "panel panel-warning"}>
+              <ul className="citation-list">
+                <li>Recipient: {adhoc.emailEvidence.recipient_email}</li>
+                <li>Subject: {adhoc.emailEvidence.subject}</li>
+                <li>Sent at: {new Date(adhoc.emailEvidence.sent_at).toLocaleString()}</li>
+                <li>
+                  Attachments:{" "}
+                  {adhoc.emailEvidence.attached_files.length > 0
+                    ? adhoc.emailEvidence.attached_files.join(", ")
+                    : "none"}
+                </li>
+                <li>Status: {adhoc.emailEvidence.message}</li>
+              </ul>
+            </div>
+          </CollapsibleSection>
         )}
 
         <div className="modal-actions">
