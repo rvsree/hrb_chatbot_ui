@@ -52,10 +52,22 @@ export default function DocLink({ featureName }: DocLinkProps) {
   async function openDoc(docId: number) {
     setIsOpening(true);
     setError(null);
+    // Opened synchronously, inside the click handler's own call stack - a
+    // tab opened *after* an awaited fetch loses the browser's "this came
+    // from a real click" association, and Chrome silently blocks it (no
+    // error, nothing visibly happens - matches the reported symptom
+    // exactly). Opening blank first, then redirecting it once the real
+    // URL is known, keeps the open() call itself synchronous.
+    const newTab = window.open("", "_blank", "noopener,noreferrer");
     try {
       const { download_url } = await getAdminDocContent(currentIdentity, docId);
-      window.open(download_url, "_blank", "noopener,noreferrer");
+      if (newTab) {
+        newTab.location.href = download_url;
+      } else {
+        setError("Your browser blocked the new tab - allow pop-ups for this site.");
+      }
     } catch (err) {
+      newTab?.close();
       setError(err instanceof ApiRequestError ? err.message : "Could not open the doc.");
     } finally {
       setIsOpening(false);
