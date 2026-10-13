@@ -6,20 +6,24 @@ import {
   askMultiAgenticQuery,
   askQuery,
   deleteConversation,
+  getAdhocSession,
   getConversation,
   getHealth,
+  listAdhocSessions,
   listConversations,
   submitFeedback,
   ApiRequestError,
 } from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import ConversationSidebar from "../components/ConversationSidebar";
+import DocLink from "../components/DocLink";
 import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
 import MessageBubble from "../components/MessageBubble";
+import UnpaidLeaveModal from "../components/UnpaidLeaveModal";
 import { useIdentity } from "../context/IdentityContext";
 import { loadConversations, saveConversations } from "../storage/conversationsStorage";
-import type { ChatMessage, ChatMode, Conversation, FeedbackVote, SearchStrategy } from "../types";
+import type { AdhocSessionSummary, ChatMessage, ChatMode, Conversation, FeedbackVote, SearchStrategy } from "../types";
 
 const MODE_LABELS: Record<ChatMode, string> = {
   "genai-rag": "GenAI RAG",
@@ -33,6 +37,17 @@ const SEARCH_STRATEGY_LABELS: Record<SearchStrategy, string> = {
   keyword: "Keyword",
   hybrid: "Hybrid",
 };
+
+// Phase 175 - admin-only doc links. RAG Pipeline resolves to a different
+// doc per dropdown option; Retrieval shares one doc across all 4 search
+// strategies - no per-method doc exists yet (flagged directly to the user,
+// not silently assumed).
+const MODE_DOC_FEATURE: Record<ChatMode, string> = {
+  "genai-rag": "genai-rag-chat",
+  "single-agentic-rag": "single-agentic-rag",
+  "multi-agentic-rag": "multi-agentic-rag",
+};
+const RETRIEVAL_DOC_FEATURE = "retrieval-strategies";
 
 // Phase 153 - concise, one entry per retrieval strategy, shown in the "?" popover below the dropdown.
 const SEARCH_STRATEGY_HELP: Record<SearchStrategy, string> = {
@@ -107,6 +122,13 @@ export default function ChatPage() {
   const navigate = useNavigate();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  // Phase 165 - summaries for the sidebar's "GenAI Chat Workflow History"
+  // section. Separate from `conversations` (that array still holds the
+  // actual loaded messages, for both kinds of history - see
+  // isAdhocWorkflow) because these summaries come from chat_workflow_store,
+  // not conversation_memory, and aren't cached in localStorage the way
+  // `conversations` is.
+  const [adhocSessions, setAdhocSessions] = useState<AdhocSessionSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   // Phase 143: replaces window.confirm() for conversation delete - same
   // reported "browser warning" look as the document-delete confirms.
@@ -122,6 +144,8 @@ export default function ChatPage() {
   const [searchStrategy, setSearchStrategy] = useState<SearchStrategy>("similarity");
   const [lambdaMult, setLambdaMult] = useState(DEFAULT_LAMBDA_MULT);
   const [showRetrievalHelp, setShowRetrievalHelp] = useState(false);
+  const [showUnpaidLeaveHelp, setShowUnpaidLeaveHelp] = useState(false);
+  const [showAdhocChatHelp, setShowAdhocChatHelp] = useState(false);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -132,6 +156,21 @@ export default function ChatPage() {
   const [adhocFiles, setAdhocFiles] = useState<File[]>([]);
   const [adhocRejections, setAdhocRejections] = useState<AdhocFileRejection[]>([]);
   const [adhocRecipientEmail, setAdhocRecipientEmail] = useState("");
+  // Phase 163 - "send email on answer" is independent of the model's own
+  // in-text SendEmailWithAnswer decision (Phase 161) - a route-level
+  // trigger the checkbox_auto path fires regardless of question wording.
+  const [adhocSendEmailOnAnswer, setAdhocSendEmailOnAnswer] = useState(false);
+  const [adhocCcEmail, setAdhocCcEmail] = useState("");
+  const [adhocEmailError, setAdhocEmailError] = useState<string | null>(null);
+  // Phase 163 - this chat workflow's own memory session id, echoed back by
+  // the backend on every adhoc turn and reused on the next one so the
+  // model sees chat_history; reset whenever attached files are cleared.
+  const [adhocSessionId, setAdhocSessionId] = useState<string | null>(null);
+  // Phase 162 - "Request Unpaid Leave": a checkbox that opens its own popup
+  // and always reverts to unchecked, same as a trigger button styled as a
+  // checkbox - not a persistent toggle. Deliberately mode-independent and
+  // separate from the GenAI Chat Workflow's own attach-files popup above.
+  const [showUnpaidLeaveModal, setShowUnpaidLeaveModal] = useState(false);
   const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -176,6 +215,15 @@ export default function ChatPage() {
       })
       .catch(() => {
         // Best-effort - the sidebar still works from local storage alone if this fails.
+      });
+
+    // Phase 165 - the "GenAI Chat Workflow History" section's own list,
+    // always server-fetched (chat_workflow_store has no localStorage
+    // cache the way `conversations` does).
+    listAdhocSessions(identity)
+      .then((response) => setAdhocSessions(response.sessions))
+      .catch(() => {
+        // Best-effort - that sidebar section just stays empty if this fails.
       });
   }, [identity, navigate]);
 
@@ -252,6 +300,47 @@ export default function ChatPage() {
     }
   }
 
+  async function handleSelectAdhocSession(sessionId: string) {
+    setActiveConversationId(sessionId);
+
+    const existing = conversations.find((entry) => entry.id === sessionId);
+    if (existing && existing.messages.length > 0) {
+      return; // already loaded (or created this browser session) - nothing to fetch
+    }
+
+    try {
+      const detail = await getAdhocSession(currentIdentity, sessionId);
+      const messages: ChatMessage[] = detail.turns.map((turn) => ({
+        id: makeId(),
+        role: turn.role === "human" ? "user" : "assistant",
+        text: turn.content,
+        createdAt: new Date(turn.created_at).getTime(),
+        feedback: null,
+      }));
+      const summary = adhocSessions.find((session) => session.session_id === sessionId);
+      setConversations((current) => {
+        const alreadyPresent = current.some((entry) => entry.id === sessionId);
+        const updated = alreadyPresent
+          ? current.map((entry) => (entry.id === sessionId ? { ...entry, messages } : entry))
+          : [
+              {
+                id: sessionId,
+                title: titleFromQuery(summary?.session_title ?? "GenAI Chat Workflow"),
+                mode: "genai-rag" as ChatMode,
+                messages,
+                createdAt: summary ? new Date(summary.started_at).getTime() : Date.now(),
+                isAdhocWorkflow: true,
+              },
+              ...current,
+            ];
+        saveConversations(currentIdentity.employee_id, updated);
+        return updated;
+      });
+    } catch {
+      // Best-effort - leave it as an empty conversation rather than blocking selection.
+    }
+  }
+
   function handleDeleteConversation(conversationId: string) {
     setDeleteConversationTarget(conversationId);
   }
@@ -297,6 +386,20 @@ export default function ChatPage() {
     setAdhocFiles([]);
     setAdhocRejections([]);
     setAdhocRecipientEmail("");
+    setAdhocSendEmailOnAnswer(false);
+    setAdhocCcEmail("");
+    setAdhocEmailError(null);
+    setAdhocSessionId(null);
+  }
+
+  const ADHOC_EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+  function isValidEmailList(value: string): boolean {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .every((entry) => ADHOC_EMAIL_PATTERN.test(entry));
   }
 
   async function handleSend(event: FormEvent) {
@@ -305,6 +408,18 @@ export default function ChatPage() {
     if (!query || isSending) {
       return;
     }
+
+    if (adhocFiles.length > 0 && adhocSendEmailOnAnswer) {
+      if (!adhocRecipientEmail || !ADHOC_EMAIL_PATTERN.test(adhocRecipientEmail)) {
+        setAdhocEmailError("Enter a valid recipient email to send the answer on send.");
+        return;
+      }
+      if (adhocCcEmail && !isValidEmailList(adhocCcEmail)) {
+        setAdhocEmailError("One of the CC addresses doesn't look like a valid email.");
+        return;
+      }
+    }
+    setAdhocEmailError(null);
 
     setIsSending(true);
     setSendError(null);
@@ -317,6 +432,7 @@ export default function ChatPage() {
     };
 
     const mode = effectiveMode;
+    const isAdhocTurn = adhocFiles.length > 0;
     const conversationIdSoFar = activeConversation?.id ?? null;
     // Live state, not frozen at conversation creation - retrieval strategy
     // and temperature can change per turn, same conversation or not.
@@ -335,7 +451,12 @@ export default function ChatPage() {
         // composer bypass the mode-based branching below entirely. Stays
         // labeled "GenAI RAG" in the dropdown on purpose - attaching a
         // file is what switches the actual call, not a new mode choice.
-        const response = await askAdhocDocumentChat(currentIdentity, query, adhocFiles, adhocRecipientEmail || undefined);
+        const response = await askAdhocDocumentChat(currentIdentity, query, adhocFiles, adhocRecipientEmail || undefined, {
+          sessionId: adhocSessionId ?? undefined,
+          sendEmailOnAnswer: adhocSendEmailOnAnswer,
+          ccEmail: adhocCcEmail || undefined,
+        });
+        setAdhocSessionId(response.session_id);
         assistantMessage = {
           id: makeId(),
           role: "assistant",
@@ -354,7 +475,11 @@ export default function ChatPage() {
             totalMs: response.latency_ms.total,
           },
         };
-        returnedConversationId = null;
+        // Phase 165 - was hardcoded null; now the real session_id, so a
+        // brand-new adhoc conversation's local id matches the id
+        // chat_workflow_store/listAdhocSessions() will later report it
+        // under, instead of a random local-only id the 2 never reconcile.
+        returnedConversationId = response.session_id;
       } else if (mode === "genai-rag") {
         const response = await askQuery(currentIdentity, query, conversationIdSoFar, genaiRagOptions);
         assistantMessage = {
@@ -417,9 +542,38 @@ export default function ChatPage() {
           mode,
           messages: [userMessage, assistantMessage],
           createdAt: Date.now(),
+          isAdhocWorkflow: isAdhocTurn,
         };
         persist([newConversation, ...conversations]);
         setActiveConversationId(newConversation.id);
+      }
+
+      // Phase 165 - keep the sidebar's "GenAI Chat Workflow History"
+      // section in sync with this turn immediately, rather than only on
+      // the next page load's listAdhocSessions() fetch.
+      if (isAdhocTurn) {
+        setAdhocSessions((current) => {
+          const existingIndex = current.findIndex((session) => session.session_id === conversationId);
+          if (existingIndex === -1) {
+            return [
+              {
+                session_id: conversationId,
+                session_title: titleFromQuery(query),
+                started_at: new Date().toISOString(),
+                last_active: new Date().toISOString(),
+                turn_count_total: 1,
+              },
+              ...current,
+            ];
+          }
+          const updated = [...current];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            last_active: new Date().toISOString(),
+            turn_count_total: updated[existingIndex].turn_count_total + 1,
+          };
+          return updated;
+        });
       }
 
       setDraft("");
@@ -491,15 +645,20 @@ export default function ChatPage() {
   return (
     <div className="chat-layout">
       <ConversationSidebar
-        conversations={conversations}
+        conversations={conversations.filter((entry) => !entry.isAdhocWorkflow)}
         activeConversationId={activeConversationId}
         onSelect={handleSelectConversation}
         onNewConversation={handleNewConversation}
         onDelete={handleDeleteConversation}
+        adhocSessions={adhocSessions}
+        onSelectAdhocSession={handleSelectAdhocSession}
       >
         <div className="tuning-bar">
           <label htmlFor="mode-select">
-            RAG Pipeline:
+            <span className="tuning-label-row">
+              RAG Pipeline:
+              <DocLink featureName={MODE_DOC_FEATURE[effectiveMode]} />
+            </span>
             <select
               id="mode-select"
               value={effectiveMode}
@@ -520,6 +679,64 @@ export default function ChatPage() {
           </label>
         </div>
 
+        {/* Phase 164 - user-directed: gated to Multi-Agent RAG mode only
+            (reverses Phase 162's original "deliberately mode-independent"
+            choice). Round-2 follow-up: also gated to employee/manager only
+            - HR specialists get their own separate "Leave approvals" view
+            instead (Admin menu) and must never see or use this submission
+            entry point, confirmed live-tested as a real gap (an hr_support
+            persona could submit a request through here before this fix).
+            Still a separate entry point from the GenAI Chat Workflow's own
+            attach-files popup below - always unchecked at rest; checking
+            it just opens the popup. */}
+        {effectiveMode === "multi-agentic-rag" && currentIdentity.role !== "hr_support" && (
+          <div className="tuning-bar">
+            <div className="checkbox-row-with-help">
+              <label htmlFor="unpaid-leave-trigger-checkbox" className="checkbox-label">
+                <input
+                  id="unpaid-leave-trigger-checkbox"
+                  type="checkbox"
+                  checked={showUnpaidLeaveModal}
+                  onChange={() => setShowUnpaidLeaveModal(true)}
+                />
+                Request Unpaid Leave
+              </label>
+              <DocLink featureName="request-unpaid-leave" />
+              <button
+                type="button"
+                className="chunking-help-button"
+                aria-label="What is Request Unpaid Leave?"
+                title="What is Request Unpaid Leave?"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setShowUnpaidLeaveHelp((current) => !current);
+                }}
+              >
+                ?
+              </button>
+            </div>
+            {showUnpaidLeaveHelp && (
+              <div className="chunking-help-popover">
+                <p>
+                  Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability -
+                  for example, extended medical leave or a personal emergency. Fill in the dates and purpose, and
+                  optionally attach supporting documentation.
+                </p>
+                <p>
+                  Behind the scenes: the system first checks your leave history for the last 12 months for that
+                  same leave type. Every request - first-time or repeat - is then routed to a human HR specialist
+                  to review and approve or reject (a "human-in-the-loop" step) - the model never approves leave on
+                  its own. Once a specialist has reviewed it, you'll see the outcome (and get an email) - or check
+                  "My requests" any time.
+                </p>
+              </div>
+            )}
+            <Link to="/my-leave-requests" className="link-button">
+              My requests
+            </Link>
+          </div>
+        )}
+
         {/* Phase 144: fixes a real misread from Phase 142's own follow-up
             instruction. "this control" in that feedback meant the
             checkbox specifically (it's named right before that phrase) -
@@ -532,29 +749,67 @@ export default function ChatPage() {
             wrongly reversed it instead of just dropping the note text. */}
         {effectiveMode === "genai-rag" && (
           <div className="tuning-bar">
-            <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
-              <input
-                id="adhoc-chat-enabled-checkbox"
-                type="checkbox"
-                checked={adhocChatEnabled}
-                onChange={(event) => {
-                  setAdhocChatEnabled(event.target.checked);
-                  // Mirrors the mode-switch cleanup above - don't leave files
-                  // attached, hidden, to a feature that's now turned off.
-                  if (!event.target.checked) {
-                    clearAdhocFiles();
-                  }
+            <div className="checkbox-row-with-help">
+              <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
+                <input
+                  id="adhoc-chat-enabled-checkbox"
+                  type="checkbox"
+                  checked={adhocChatEnabled}
+                  onChange={(event) => {
+                    setAdhocChatEnabled(event.target.checked);
+                    // Mirrors the mode-switch cleanup above - don't leave files
+                    // attached, hidden, to a feature that's now turned off.
+                    if (!event.target.checked) {
+                      clearAdhocFiles();
+                    }
+                  }}
+                />
+                Enable GenAI Chat Workflow (attach files to ask about directly)
+              </label>
+              <DocLink featureName="genai-chat-workflow" />
+              <button
+                type="button"
+                className="chunking-help-button"
+                aria-label="What is the GenAI Chat Workflow?"
+                title="What is the GenAI Chat Workflow?"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setShowAdhocChatHelp((current) => !current);
                 }}
-              />
-              Enable GenAI Chat Workflow (attach files to ask about directly)
-            </label>
+              >
+                ?
+              </button>
+            </div>
+            {showAdhocChatHelp && (
+              <div className="chunking-help-popover">
+                <p>
+                  Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
+                  about it directly, instead of searching the HR knowledge base. The answer is based only on
+                  what's in the file you attached.
+                </p>
+                <p>
+                  Behind the scenes: this skips retrieval from the vector database entirely and reads your file
+                  straight into the model's context. It can also search the web for related information and, if
+                  you ask, email the answer - and it remembers earlier turns in the same attached-file
+                  conversation.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
+        {/* Phase 164 - user-directed: hidden specifically when the GenAI
+            Chat Workflow's attach-files feature is turned on (none of these
+            settings apply to that path - it never touches the vector
+            store). Scoped to the adhocChatEnabled checkbox, not RAG
+            Pipeline mode - Phase 144's own "render unconditionally in
+            every mode" decision above is about mode, untouched here. */}
+        {!(effectiveMode === "genai-rag" && adhocChatEnabled) && (
         <div className="tuning-bar">
           <label htmlFor="search-strategy-select">
             <span className="tuning-label-row">
               Retrieval:
+              <DocLink featureName={RETRIEVAL_DOC_FEATURE} />
               <button
                 type="button"
                 className="chunking-help-button"
@@ -624,6 +879,7 @@ export default function ChatPage() {
           )}
           <p className="dev-note-inline">Takes effect on your next message.</p>
         </div>
+        )}
       </ConversationSidebar>
 
       <div className="chat-main">
@@ -643,19 +899,41 @@ export default function ChatPage() {
               </button>
               {isAdminMenuOpen && (
                 <div className="admin-menu-dropdown">
-                  {identity.role === "hr_support" && (
+                  {/* Phase 176 - visibility widened from hr_support-only to also
+                      include admin, matching Phase 168's own backend RBAC
+                      (ingest_document.py already accepts ADMIN). Phase 178 -
+                      the per-item DocLink moved off this menu entirely (it
+                      lives on each destination page's own <h1> instead,
+                      next to "Document upload"/"Indexed documents") - a
+                      live screenshot showed "No doc synced for this feature
+                      yet." wrapping badly in this dropdown's narrow width,
+                      and the same link here was redundant with the one on
+                      the page it leads to. */}
+                  {(identity.role === "hr_support" || identity.role === "admin") && (
                     <Link to="/upload" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                       Upload documents
                     </Link>
                   )}
-                  {identity.role === "hr_support" && (
+                  {(identity.role === "hr_support" || identity.role === "admin") && (
                     <Link to="/documents" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                       Manage documents
+                    </Link>
+                  )}
+                  {/* Phase 178 - widened to admin: a superuser role should
+                      reach every feature, including HR Support's own. */}
+                  {(identity.role === "hr_support" || identity.role === "admin") && (
+                    <Link to="/leave-approvals" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      Leave approvals
                     </Link>
                   )}
                   <Link to="/feedback" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                     View feedback
                   </Link>
+                  {identity.role === "admin" && (
+                    <Link to="/admin" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      Admin dashboard
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
@@ -736,6 +1014,29 @@ export default function ChatPage() {
                         placeholder="someone@example.com"
                       />
                     </label>
+                    {/* Phase 163 - route-level trigger, independent of the
+                        model's own in-text email decision above. Off by
+                        default; checking it requires a valid recipient. */}
+                    <label className="adhoc-email-label adhoc-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={adhocSendEmailOnAnswer}
+                        onChange={(event) => setAdhocSendEmailOnAnswer(event.target.checked)}
+                      />
+                      Always send email on this answer
+                    </label>
+                    {adhocSendEmailOnAnswer && (
+                      <label className="adhoc-email-label">
+                        CC (optional, comma-separated):{" "}
+                        <input
+                          type="text"
+                          value={adhocCcEmail}
+                          onChange={(event) => setAdhocCcEmail(event.target.value)}
+                          placeholder="someone@example.com, other@example.com"
+                        />
+                      </label>
+                    )}
+                    {adhocEmailError && <p className="leave-form-error">{adhocEmailError}</p>}
                     <button type="button" className="link-button" onClick={clearAdhocFiles}>
                       clear attached files
                     </button>
@@ -806,6 +1107,8 @@ export default function ChatPage() {
           </div>
         </form>
       </div>
+
+      {showUnpaidLeaveModal && <UnpaidLeaveModal onClose={() => setShowUnpaidLeaveModal(false)} />}
 
       {feedbackTarget && <FeedbackModal onClose={() => setFeedbackTarget(null)} onSubmit={applyFeedback} />}
 

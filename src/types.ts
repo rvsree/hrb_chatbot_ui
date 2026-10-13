@@ -1,4 +1,4 @@
-export type Role = "employee" | "manager" | "hr_support";
+export type Role = "employee" | "manager" | "hr_support" | "admin";
 
 export interface UserProfile {
   employee_id: string;
@@ -115,6 +115,9 @@ export interface AdhocDocumentChatResponse {
   web_searches: string[];
   email_sent_to: string | null;
   email_evidence: EmailEvidence | null;
+  // Phase 163 - always present now; send it back as AdhocChatOptions.sessionId
+  // on the next turn in this same chat to continue its memory.
+  session_id: string;
   model_used: string;
   iterations: number;
   llm_call_count: number;
@@ -183,6 +186,33 @@ export interface ConversationTurnRecord {
 export interface ConversationDetailResponse {
   conversation_id: string;
   turns: ConversationTurnRecord[];
+}
+
+// Phase 165 - the sidebar's own "GenAI Chat Workflow History" section,
+// same shape as ConversationSummary/-DetailResponse above but backed by
+// chat_workflow_store.py (Phase 163) instead of conversation_memory.py.
+export interface AdhocSessionSummary {
+  session_id: string;
+  session_title: string;
+  started_at: string;
+  last_active: string;
+  turn_count_total: number;
+}
+
+export interface AdhocSessionListResponse {
+  count: number;
+  sessions: AdhocSessionSummary[];
+}
+
+export interface AdhocSessionTurn {
+  role: "human" | "ai";
+  content: string;
+  created_at: string;
+}
+
+export interface AdhocSessionDetailResponse {
+  session_id: string;
+  turns: AdhocSessionTurn[];
 }
 
 export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
@@ -256,6 +286,12 @@ export interface Conversation {
   mode: ChatMode;
   messages: ChatMessage[];
   createdAt: number;
+  // Phase 165 - true when id is a chat_workflow_store session_id (the
+  // GenAI Chat Workflow), not a conversation_memory conversation_id - the
+  // sidebar's "GenAI Chat Workflow History" section filters on this,
+  // rather than inspecting message content, so it still works for an
+  // entry whose messages haven't been lazy-loaded yet.
+  isAdhocWorkflow?: boolean;
 }
 
 export interface VersioningInfo {
@@ -303,6 +339,135 @@ export interface PresignedUploadResponse {
   status: string;
 }
 
+// Phase 162 - "Request Unpaid Leave", a second A2A/HITL workflow,
+// deliberately separate from the GenAI Chat Workflow and its own
+// presigned-upload shape above (a different S3 bucket - see
+// hrb_chatbot_v2's s3_upload_client.py for why).
+export interface LeaveDocumentUploadUrlResponse {
+  upload_url: string;
+  key: string;
+  expires_in_seconds: number;
+}
+
+// Phase 165 - the 4 specialist-reviewed leave types, must keep matching
+// common/enums.py::LeaveTypeCode.
+export type LeaveTypeCode = "UNPAID" | "CRITICAL_CAREGIVER" | "STD" | "LTD";
+
+export const LEAVE_TYPE_LABELS: Record<LeaveTypeCode, string> = {
+  UNPAID: "Unpaid Leave",
+  CRITICAL_CAREGIVER: "Critical CareGiver Leave",
+  STD: "Short-Term Disability",
+  LTD: "Long-Term Disability",
+};
+
+export interface UnpaidLeaveRequestResponse {
+  request_id: number;
+  employee_id: string;
+  leave_type: string;
+  status: string;
+  is_repeat_within_12_months: boolean;
+  hitl_request_context_id: number;
+  hitl_status: string;
+  days: number;
+}
+
+export interface HitlRequestSummary {
+  hitl_request_context_id: number;
+  request_type: string;
+  employee_id: string | null;
+  query: string;
+  context: {
+    leave_request_id?: number;
+    start_date?: string;
+    end_date?: string;
+    days?: number;
+    purpose?: string;
+    leave_type?: string;
+    is_repeat_within_12_months?: boolean;
+    document_reference?: string | null;
+  };
+  status: string;
+  assigned_to: string | null;
+  created_at: string | null;
+}
+
+// Phase 165
+export interface LeaveDocumentDownloadUrlResponse {
+  download_url: string;
+  original_filename: string;
+  expires_in_seconds: number;
+}
+
+export interface MyLeaveRequestSummary {
+  request_id: number;
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  days: number;
+  purpose: string;
+  status: string;
+  decision: string | null;
+  hr_comments: string | null;
+  hr_specialist_name: string | null;
+  created_at: string | null;
+  responded_at: string | null;
+  // Phase 172 - see HrLeaveRequestSummary's own comment above.
+  task_state: string | null;
+  review_brief: string | null;
+  decision_message: { role: string; parts: { type: string; content: string }[] } | null;
+  produced_artifacts: Record<string, unknown>[];
+}
+
+export interface MyLeaveRequestsResponse {
+  total: number;
+  requests: MyLeaveRequestSummary[];
+}
+
+export interface PendingHitlRequestsResponse {
+  total: number;
+  requests: HitlRequestSummary[];
+}
+
+// Phase 168 (round 2) - the HR specialist grid: every leave request
+// across every employee, any status, with full review detail.
+export interface HrLeaveRequestSummary {
+  hitl_request_context_id: number;
+  request_id: number;
+  employee_id: string | null;
+  employee_name: string | null;
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  days: number;
+  purpose: string;
+  status: string;
+  decision: string | null;
+  hr_comments: string | null;
+  hr_specialist_name: string | null;
+  created_at: string | null;
+  responded_at: string | null;
+  // Phase 172 - A2A-shaped fields, additive alongside status/decision/
+  // hr_comments above (unchanged) - null until the agent graph actually
+  // produces them.
+  task_state: string | null;
+  review_brief: string | null;
+  decision_message: { role: string; parts: { type: string; content: string }[] } | null;
+  produced_artifacts: Record<string, unknown>[];
+}
+
+export interface HrLeaveRequestsResponse {
+  total: number;
+  requests: HrLeaveRequestSummary[];
+}
+
+export interface ResolveHitlRequestResponse {
+  hitl_request_context_id: number;
+  status: string;
+  decision: string;
+  response: string;
+  related_leave_request_updated: boolean;
+}
+
 export interface AgenticRagResponse {
   query: string;
   answer: string;
@@ -322,4 +487,60 @@ export interface MultiAgenticRagResponse {
   iterations: number;
   explainability_info: ExplainabilityInfo;
   conversation_id: string | null;
+}
+
+// Phase 168 - admin dashboard (view + hard-delete across KB documents,
+// conversations, feedback, leave requests/HITL reviews). KB documents and
+// feedback reuse DocumentRecord/FeedbackRecord above unchanged.
+export interface AdminConversationSummary {
+  conversation_id: string;
+  employee_id: string | null;
+  title: string;
+  started_at: string;
+  last_updated_at: string;
+}
+
+export interface AdminConversationListResponse {
+  count: number;
+  conversations: AdminConversationSummary[];
+}
+
+export interface AdminDeleteConversationResponse {
+  conversation_id: string;
+  turns_deleted: number;
+}
+
+export interface AdminDeleteFeedbackResponse {
+  feedback_id: number;
+  deleted: boolean;
+}
+
+export interface AdminDeleteLeaveRequestResponse {
+  hitl_request_context_id: number;
+  deleted_hitl_request: boolean;
+  deleted_specialist_leave_reviews: number;
+  deleted_leave_request: boolean;
+  deleted_document_count: number;
+}
+
+// Phase 170 (round 1) - the admin-only docs viewer.
+export interface AdminDocSummary {
+  id: number;
+  feature_name: string;
+  doc_title: string;
+  doc_type: string;
+  doc_version: number;
+  created_at: string;
+  updated_at: string;
+  last_synced_at: string;
+}
+
+export interface AdminDocListResponse {
+  count: number;
+  docs: AdminDocSummary[];
+}
+
+export interface AdminDocContentResponse {
+  download_url: string;
+  expires_in_seconds: number;
 }

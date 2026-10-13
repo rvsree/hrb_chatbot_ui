@@ -1,8 +1,13 @@
 import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 import { IdentityProvider, useIdentity } from "./context/IdentityContext";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
+import LeaveApprovalsPage from "./pages/LeaveApprovalsPage";
 import LoginPage from "./pages/LoginPage";
+import MyLeaveRequestsPage from "./pages/MyLeaveRequestsPage";
+import OpenDocPage from "./pages/OpenDocPage";
+import ResetSecretCodePage from "./pages/ResetSecretCodePage";
 import UploadPage from "./pages/UploadPage";
 import ViewFeedbackPage from "./pages/ViewFeedbackPage";
 import "./App.css";
@@ -51,6 +56,43 @@ function AppRoutes() {
           </RequireIdentity>
         }
       />
+      <Route
+        path="/leave-approvals"
+        element={
+          <RequireIdentity>
+            <LeaveApprovalsPage />
+          </RequireIdentity>
+        }
+      />
+      <Route
+        path="/my-leave-requests"
+        element={
+          <RequireIdentity>
+            <MyLeaveRequestsPage />
+          </RequireIdentity>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <RequireIdentity>
+            <AdminDashboardPage />
+          </RequireIdentity>
+        }
+      />
+      <Route
+        path="/admin/reset-secret-code"
+        element={
+          <RequireIdentity>
+            <ResetSecretCodePage />
+          </RequireIdentity>
+        }
+      />
+      {/* Not RequireIdentity-wrapped - OpenDocPage shows its own
+          "sign in required" state instead of bouncing to /login, since it's
+          meant to be opened directly from a link inside a static document,
+          not navigated to from within the app. */}
+      <Route path="/admin/open-doc" element={<OpenDocPage />} />
       <Route path="*" element={<Navigate to="/chat" replace />} />
     </Routes>
   );

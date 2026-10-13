@@ -531,6 +531,16 @@ textarea:focus {
   padding: 0;
 }
 
+/* Phase 164 - pairs a .checkbox-label row with its own "?" help button,
+   same row-with-space-between shape as .tuning-label-row uses for a
+   dropdown's own label. */
+.checkbox-row-with-help {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .message {
   max-width: 88%;
   padding: 12px 16px;
@@ -817,6 +827,19 @@ textarea:focus {
   min-width: 180px;
 }
 
+/* Phase 164 - the checkbox variant must not inherit the text-input sizing
+   above (flex: 1 + min-width: 180px was stretching the checkbox itself and
+   pushing its label text to the far right). */
+.adhoc-email-label.adhoc-checkbox-label {
+  gap: 8px;
+}
+
+.adhoc-email-label.adhoc-checkbox-label input[type="checkbox"] {
+  flex: none;
+  width: auto;
+  min-width: 0;
+}
+
 .composer-row textarea {
   flex: 1;
   border: none;
@@ -948,6 +971,24 @@ textarea:focus {
 .knowledge-source-failed {
   color: var(--danger);
   font-weight: 600;
+}
+
+/* Phase 173 - the 3 Eval Score sub-groups (Retrieval/Response/Others),
+   same label shape as .knowledge-source-group-label for visual consistency. */
+.eval-score-group {
+  margin-top: 10px;
+}
+
+.eval-score-group:first-of-type {
+  margin-top: 0;
+}
+
+.eval-score-group-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
 }
 
 .panel-info {
@@ -1176,12 +1217,42 @@ textarea:focus {
   margin-top: 20px;
 }
 
+/* Phase 162 - "Request Unpaid Leave" modal's own form field spacing/errors.
+   Reuses the global input/select/textarea styling above - just the
+   label-above-field rhythm and an error line, nothing new in the fields
+   themselves. */
+.modal-card label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+
+.modal-card label:first-of-type {
+  margin-top: 10px;
+}
+
+.leave-form-error {
+  color: var(--danger);
+  font-size: 12.5px;
+  margin: 4px 0 0;
+}
+
 .upload-card {
   max-width: 480px;
 }
 
 .documents-card {
   max-width: 1200px;
+}
+
+/* Phase 175 - Admin Dashboard: a stable height across tabs, not just
+   width - .documents-table-scroll's own max-height (60vh) only bounds a
+   LONG tab's height, so a short tab (e.g. 2 rows) made the whole page
+   visibly shrink when switching tabs. min-height holds the content area
+   steady regardless of how many rows the active tab actually has. */
+.admin-dashboard-table-scroll {
+  min-height: 360px;
 }
 
 /* Phase 142: replaces window.confirm() for the chunking-strategy change -
@@ -1264,16 +1335,90 @@ textarea:focus {
 }
 
 .chunking-help-button {
-  width: 22px;
-  height: 22px;
+  width: 15px;
+  height: 15px;
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--gold);
   background: var(--gold-soft);
   color: var(--gold);
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
+}
+
+/* Phase 170 (round 1) - admin-only link to the in-app architecture docs
+   viewer. Same small-pill shape as .chunking-help-button, --accent tokens
+   instead of --gold so it reads as a distinct kind of button (opens a
+   doc, not an inline explanation). */
+.doc-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.doc-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 8px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Phase 177 - a no-doc-synced-yet state reads as a visual cue (amber,
+   same token the "?" help buttons already use), the real message lives
+   in the title tooltip only - never as extra DOM content that could
+   break a tight container's layout again. */
+.doc-link-button-error {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* Phase 179 - a feature with several docs (Spec/Architecture/Design/
+   Decisions) opens this small anchored list instead of a doc directly;
+   one doc still opens immediately with no popover, unchanged. */
+.doc-link-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 140px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+}
+
+.doc-link-popover-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.doc-link-popover-item:hover {
+  background: var(--surface-sunken);
 }
 
 .chunking-help-popover {
@@ -1328,12 +1473,17 @@ textarea:focus {
   position: sticky;
   top: 0;
   text-align: left;
-  color: var(--text-muted);
+  /* Phase 168 (round 4) - was --text-muted on --surface-sunken (deliberately
+     subtle); user asked for a bright, clearly-distinct header row instead.
+     --accent/--accent-contrast already form a themed bright/white pair used
+     elsewhere (buttons) - reusing them keeps this correct in dark mode too,
+     rather than hardcoding a literal color that would only work in one theme. */
+  color: var(--accent-contrast);
   font-weight: 600;
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: var(--surface-sunken);
+  background: var(--accent);
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
 }

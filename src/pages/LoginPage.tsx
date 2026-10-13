@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<Role>("employee");
+  const [secretCode, setSecretCode] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -21,9 +22,9 @@ export default function LoginPage() {
     setIsValidating(true);
     setLoginError(null);
     try {
-      const userProfile = await validateLogin(employeeId.trim(), fullName.trim(), role);
-      login(userProfile);
-      navigate("/chat");
+      const result = await validateLogin(employeeId.trim(), fullName.trim(), role, secretCode.trim() || undefined);
+      login(result.userProfile);
+      navigate(result.mustResetSecretCode ? "/admin/reset-secret-code" : "/chat");
     } catch (error) {
       if (error instanceof ApiRequestError) {
         setLoginError(error.message);
@@ -68,7 +69,22 @@ export default function LoginPage() {
           <option value="employee">Employee</option>
           <option value="manager">Manager</option>
           <option value="hr_support">HR Support</option>
+          <option value="admin">Admin</option>
         </select>
+
+        {role === "admin" && (
+          <>
+            <label htmlFor="secret-code">Secret code</label>
+            <input
+              id="secret-code"
+              type="password"
+              value={secretCode}
+              onChange={(event) => setSecretCode(event.target.value)}
+              placeholder="Admin secret code"
+              required
+            />
+          </>
+        )}
 
         {loginError && <p className="error-banner">{loginError}</p>}
 

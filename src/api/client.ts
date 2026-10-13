@@ -1,5 +1,13 @@
 import type {
   AdhocDocumentChatResponse,
+  AdhocSessionDetailResponse,
+  AdhocSessionListResponse,
+  AdminConversationListResponse,
+  AdminDeleteConversationResponse,
+  AdminDeleteFeedbackResponse,
+  AdminDeleteLeaveRequestResponse,
+  AdminDocContentResponse,
+  AdminDocListResponse,
   AgenticRagResponse,
   ConversationDetailResponse,
   ConversationListResponse,
@@ -10,9 +18,17 @@ import type {
   FeedbackListResponse,
   FeedbackVote,
   GenaiRagOptions,
+  HrLeaveRequestsResponse,
+  LeaveDocumentDownloadUrlResponse,
+  LeaveDocumentUploadUrlResponse,
+  LeaveTypeCode,
   MultiAgenticRagResponse,
+  MyLeaveRequestsResponse,
+  PendingHitlRequestsResponse,
   PresignedUploadResponse,
   RagQueryResponse,
+  ResolveHitlRequestResponse,
+  UnpaidLeaveRequestResponse,
   UserProfile,
 } from "../types";
 
@@ -73,17 +89,37 @@ async function parseErrorAndThrow(response: Response): Promise<never> {
   throw new ApiRequestError(message, code, response.status);
 }
 
+// Phase 163 - the 3 new, deliberately optional fields all default to "off"
+// server-side too (no session_id -> a fresh session; no
+// send_email_on_answer -> the model's own in-text decision is still the
+// only trigger, unchanged).
+export interface AdhocChatOptions {
+  sessionId?: string;
+  sendEmailOnAnswer?: boolean;
+  ccEmail?: string;
+}
+
 export async function askAdhocDocumentChat(
   userProfile: UserProfile,
   question: string,
   files: File[],
   recipientEmail?: string,
+  options?: AdhocChatOptions,
 ): Promise<AdhocDocumentChatResponse> {
   const formData = new FormData();
   formData.append("user_profile", JSON.stringify(userProfile));
   formData.append("question", question);
   if (recipientEmail) {
     formData.append("recipient_email", recipientEmail);
+  }
+  if (options?.sessionId) {
+    formData.append("session_id", options.sessionId);
+  }
+  if (options?.sendEmailOnAnswer) {
+    formData.append("send_email_on_answer", "true");
+  }
+  if (options?.ccEmail) {
+    formData.append("cc_email", options.ccEmail);
   }
   for (const file of files) {
     formData.append("files", file);
@@ -376,18 +412,51 @@ export async function listFeedback(userProfile: UserProfile): Promise<FeedbackLi
   return (await response.json()) as FeedbackListResponse;
 }
 
-export async function validateLogin(employeeId: string, fullName: string, role: string): Promise<UserProfile> {
+export interface LoginResult {
+  userProfile: UserProfile;
+  mustResetSecretCode: boolean;
+}
+
+export async function validateLogin(
+  employeeId: string,
+  fullName: string,
+  role: string,
+  secretCode?: string,
+): Promise<LoginResult> {
   const response = await fetch(`${API_BASE_URL}/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ employee_id: employeeId, full_name: fullName, role }),
+    body: JSON.stringify({ employee_id: employeeId, full_name: fullName, role, secret_code: secretCode }),
   });
 
   if (!response.ok) {
     await parseErrorAndThrow(response);
   }
-  const body = (await response.json()) as { user_profile: UserProfile };
-  return body.user_profile;
+  const body = (await response.json()) as { user_profile: UserProfile; must_reset_secret_code: boolean };
+  return { userProfile: body.user_profile, mustResetSecretCode: body.must_reset_secret_code };
+}
+
+// Phase 171 - only reachable by an already-authenticated admin (the
+// backend also requires the CURRENT code, not just the admin role).
+export async function resetAdminSecretCode(
+  userProfile: UserProfile,
+  currentSecretCode: string,
+  newSecretCode: string,
+): Promise<{ employee_id: string; reset: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/v1/auth/admin/reset-secret-code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      current_secret_code: currentSecretCode,
+      new_secret_code: newSecretCode,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return await response.json();
 }
 
 export async function listConversations(userProfile: UserProfile): Promise<ConversationListResponse> {
@@ -421,6 +490,38 @@ export async function getConversation(
   return (await response.json()) as ConversationDetailResponse;
 }
 
+// Phase 165 - the "GenAI Chat Workflow History" sidebar section's own
+// list/detail calls, same query-param-identity GET shape as
+// listConversations/getConversation above but hitting chat_workflow_store's
+// own routes.
+export async function listAdhocSessions(userProfile: UserProfile): Promise<AdhocSessionListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/adhoc-document-chat/sessions?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdhocSessionListResponse;
+}
+
+export async function getAdhocSession(userProfile: UserProfile, sessionId: string): Promise<AdhocSessionDetailResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/adhoc-document-chat/sessions/${sessionId}?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdhocSessionDetailResponse;
+}
+
 export async function deleteConversation(
   userProfile: UserProfile,
   conversationId: string,
@@ -435,6 +536,267 @@ export async function deleteConversation(
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as { conversation_id: string; turns_deleted: number };
+}
+
+// Phase 162 - "Request Unpaid Leave", deliberately separate from both the
+// GenAI Chat Workflow functions above and its own presigned-upload shape -
+// a different S3 bucket, a different backend route family.
+
+export async function getLeaveDocumentUploadUrl(
+  userProfile: UserProfile,
+  filename: string,
+  contentType: string,
+): Promise<LeaveDocumentUploadUrlResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/unpaid-leave/upload-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile, filename, content_type: contentType }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as LeaveDocumentUploadUrlResponse;
+}
+
+export async function submitUnpaidLeaveRequest(
+  userProfile: UserProfile,
+  startDate: string,
+  endDate: string,
+  purpose: string,
+  leaveTypeCode: LeaveTypeCode,
+  documentReference?: string,
+): Promise<UnpaidLeaveRequestResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/unpaid-leave/request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      start_date: startDate,
+      end_date: endDate,
+      purpose,
+      leave_type_code: leaveTypeCode,
+      document_reference: documentReference,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as UnpaidLeaveRequestResponse;
+}
+
+// Phase 165
+export async function listMyLeaveRequests(userProfile: UserProfile): Promise<MyLeaveRequestsResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/unpaid-leave/my-requests?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as MyLeaveRequestsResponse;
+}
+
+export async function getLeaveDocumentDownloadUrl(
+  userProfile: UserProfile,
+  leaveRequestId: number,
+): Promise<LeaveDocumentDownloadUrlResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/unpaid-leave/documents/${leaveRequestId}?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as LeaveDocumentDownloadUrlResponse;
+}
+
+export async function listPendingUnpaidLeaveRequests(userProfile: UserProfile): Promise<PendingHitlRequestsResponse> {
+  // Same Phase 96 "identity in query params, not a body" reasoning as every
+  // other GET route - but as one JSON blob, matching the backend route's
+  // own `user_profile: str` param, not 3 separate employee_id/full_name/role
+  // fields the way listDocuments()/listFeedback() do it.
+  const response = await fetch(
+    `${API_BASE_URL}/v1/unpaid-leave/pending?user_profile=${encodeURIComponent(JSON.stringify(userProfile))}`,
+  );
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as PendingHitlRequestsResponse;
+}
+
+// Phase 168 (round 2) - the HR specialist grid's own data source, every
+// status, not just PENDING. Query-param identity as 3 separate fields,
+// matching listMyLeaveRequests()/the other newer GET routes.
+export async function listAllLeaveRequests(userProfile: UserProfile): Promise<HrLeaveRequestsResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/unpaid-leave/all?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as HrLeaveRequestsResponse;
+}
+
+export async function resolveUnpaidLeaveRequest(
+  userProfile: UserProfile,
+  hitlRequestContextId: number,
+  decision: "APPROVED" | "REJECTED",
+  responseText: string,
+): Promise<ResolveHitlRequestResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/unpaid-leave/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      hitl_request_context_id: hitlRequestContextId,
+      decision,
+      response_text: responseText,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as ResolveHitlRequestResponse;
+}
+
+// Phase 168 - admin dashboard. Documents reuse listDocuments()/
+// deleteDocumentById() above unchanged - the backend route is identical,
+// just its RBAC widened to also accept the admin role.
+export async function listAllConversationsAdmin(userProfile: UserProfile): Promise<AdminConversationListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/conversations?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminConversationListResponse;
+}
+
+export async function getConversationTurnsAdmin(
+  userProfile: UserProfile,
+  conversationId: string,
+): Promise<ConversationDetailResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/conversations/${conversationId}?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as ConversationDetailResponse;
+}
+
+export async function deleteConversationAdmin(
+  userProfile: UserProfile,
+  conversationId: string,
+): Promise<AdminDeleteConversationResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/conversations/${conversationId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminDeleteConversationResponse;
+}
+
+export async function listAllFeedbackAdmin(userProfile: UserProfile): Promise<FeedbackListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/feedback?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FeedbackListResponse;
+}
+
+export async function deleteFeedbackAdmin(
+  userProfile: UserProfile,
+  feedbackId: number,
+): Promise<AdminDeleteFeedbackResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/feedback/${feedbackId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminDeleteFeedbackResponse;
+}
+
+export async function deleteLeaveRequestAdmin(
+  userProfile: UserProfile,
+  hitlRequestContextId: number,
+): Promise<AdminDeleteLeaveRequestResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/leave-requests/${hitlRequestContextId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminDeleteLeaveRequestResponse;
+}
+
+// Phase 170 (round 1) - the admin-only docs viewer.
+
+export async function listAdminDocs(userProfile: UserProfile): Promise<AdminDocListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/docs?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminDocListResponse;
+}
+
+export async function getAdminDocContent(userProfile: UserProfile, docId: number): Promise<AdminDocContentResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/docs/${docId}/content?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminDocContentResponse;
 }
 
 export async function getHealth(): Promise<{ embedding_model: string }> {

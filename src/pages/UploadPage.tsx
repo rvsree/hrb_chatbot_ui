@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type DragEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiRequestError, getDocument, getHealth, requestPresignedUpload, uploadFileToS3 } from "../api/client";
+import DocLink from "../components/DocLink";
 import { useIdentity } from "../context/IdentityContext";
 import type { UserProfile } from "../types";
 import { statusLabel } from "../utils/documentStatus";
@@ -91,12 +92,12 @@ export default function UploadPage() {
   }
   const currentIdentity: typeof identity = identity;
 
-  if (identity.role !== "hr_support") {
+  if (identity.role !== "hr_support" && identity.role !== "admin") {
     return (
       <div className="centered-page">
         <div className="card">
           <h1>Document upload</h1>
-          <p>Only HR Support can upload documents - the backend rejects any other role.</p>
+          <p>Only HR Support and Admin can upload documents - the backend rejects any other role.</p>
           <Link to="/chat">Back to chat</Link>
         </div>
       </div>
@@ -195,7 +196,9 @@ export default function UploadPage() {
   return (
     <div className="centered-page">
       <div className="card upload-card">
-        <h1>Document upload</h1>
+        <h1>
+          Document upload <DocLink featureName="upload-documents" />
+        </h1>
         <p>
           <Link to="/chat">Back to chat</Link> · <Link to="/documents">Manage documents</Link> ·{" "}
           <Link to="/feedback">View feedback</Link>

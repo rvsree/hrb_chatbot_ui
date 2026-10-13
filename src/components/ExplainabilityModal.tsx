@@ -363,29 +363,46 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                 }
               >
                 <span className="panel-eyebrow">Eval Scores</span>
-                <ul className="citation-list">
-                  <li>
-                    Groundedness: {message.explainability.eval_scores.groundedness.toFixed(2)} -{" "}
-                    {message.explainability.eval_scores.groundedness_verdict}
-                  </li>
-                  <li>
-                    Completeness: {message.explainability.eval_scores.completeness.toFixed(2)} -{" "}
-                    {message.explainability.eval_scores.completeness_verdict}
-                  </li>
-                  {message.explainability.latency_ms.eval !== null && (
-                    <li>Judging time: {message.explainability.latency_ms.eval.toFixed(0)}ms</li>
-                  )}
-                  <li>Judge: hand-rolled LLM-as-judge prompts (IK FDE Module 5 pattern) - not DeepEval or a third-party eval library.</li>
-                  <li>
-                    F1 score: not available live - it needs a known relevant-chunk set to compare retrieval against,
-                    which only exists offline (the 22-case golden dataset), not for a real, unlabeled live question.
-                  </li>
-                </ul>
-                <p className="dev-note-inline">
-                  Checks the final answer only (groundedness/completeness) - retrieval quality (precision/recall/F1)
-                  is measured offline against the golden dataset, not per live query. Reused, not re-judged, on a
-                  cache hit.
-                </p>
+
+                {/* Phase 173 - 3 logically-segregated sub-groups, per
+                    direct user request. Retrieval Score has no live values
+                    yet (see the note below it) - the sub-section exists
+                    now so it fills in without a layout change once that
+                    lands. */}
+                <div className="eval-score-group">
+                  <span className="eval-score-group-label">Retrieval Score</span>
+                  <p className="dev-note-inline">
+                    Precision/Recall/F1 not computed per live query yet - measured offline against the 22-case golden
+                    dataset only (see RAG-ROADMAP.md).
+                  </p>
+                </div>
+
+                <div className="eval-score-group">
+                  <span className="eval-score-group-label">Response Score</span>
+                  <ul className="citation-list">
+                    <li>
+                      Groundedness: {message.explainability.eval_scores.groundedness.toFixed(2)} -{" "}
+                      {message.explainability.eval_scores.groundedness_verdict}
+                    </li>
+                    <li>
+                      Completeness: {message.explainability.eval_scores.completeness.toFixed(2)} -{" "}
+                      {message.explainability.eval_scores.completeness_verdict}
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="eval-score-group">
+                  <span className="eval-score-group-label">Others</span>
+                  <ul className="citation-list">
+                    {message.explainability.latency_ms.eval !== null && (
+                      <li>Judging time: {message.explainability.latency_ms.eval.toFixed(0)}ms</li>
+                    )}
+                    <li>
+                      Judge: hand-rolled LLM-as-judge prompts (IK FDE Module 5 pattern) - not DeepEval or a
+                      third-party eval library.
+                    </li>
+                  </ul>
+                </div>
               </div>
             ) : (
               <div className="panel panel-warning">

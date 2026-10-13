@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiRequestError, deleteDocumentById, getHealth, listDocuments, rechunkDocument, uploadDocuments } from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import DocLink from "../components/DocLink";
 import { useIdentity } from "../context/IdentityContext";
-import type { DocumentRecord } from "../types";
+import type { DocumentRecord, Role } from "../types";
 import { formatElapsed, statusLabel } from "../utils/documentStatus";
 
 function strategyLabel(strategy: string): string {
@@ -160,7 +161,7 @@ export default function DocumentsPage() {
   }, [documents]);
 
   useEffect(() => {
-    if (!identity || identity.role !== "hr_support") {
+    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin")) {
       return;
     }
     refresh(identity.employee_id, identity.full_name, identity.role);
@@ -175,7 +176,7 @@ export default function DocumentsPage() {
   // pending_upload) - stops itself once every document reaches a terminal
   // state, so this doesn't poll forever on an otherwise-idle page.
   useEffect(() => {
-    if (!identity || identity.role !== "hr_support") {
+    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin")) {
       return;
     }
     const hasInFlightDocument = documents.some((doc) => !TERMINAL_STATUSES.has(doc.status));
@@ -195,12 +196,12 @@ export default function DocumentsPage() {
   }
   const currentIdentity: typeof identity = identity;
 
-  if (identity.role !== "hr_support") {
+  if (identity.role !== "hr_support" && identity.role !== "admin") {
     return (
       <div className="centered-page">
         <div className="card">
           <h1>Indexed documents</h1>
-          <p>Only HR Support can view or delete indexed documents.</p>
+          <p>Only HR Support and Admin can view or delete indexed documents.</p>
           <Link to="/chat">Back to chat</Link>
         </div>
       </div>
@@ -212,7 +213,7 @@ export default function DocumentsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await listDocuments({ employee_id: employeeId, full_name: fullName, role: role as "hr_support" });
+      const response = await listDocuments({ employee_id: employeeId, full_name: fullName, role: role as Role });
       // A newer refresh() started while this one was in flight - its
       // response is stale even though it arrived "last" in wall-clock
       // time; drop it rather than overwrite the newer data.
@@ -406,7 +407,9 @@ export default function DocumentsPage() {
   return (
     <div className="centered-page">
       <div className="card documents-card">
-        <h1>Indexed documents</h1>
+        <h1>
+          Indexed documents <DocLink featureName="manage-documents" />
+        </h1>
         <p>
           <Link to="/chat">Back to chat</Link> · <Link to="/upload">Upload more</Link> ·{" "}
           <Link to="/feedback">View feedback</Link>
@@ -442,7 +445,9 @@ export default function DocumentsPage() {
                 <th>Status</th>
                 <th>Elapsed</th>
                 <th>Chunks</th>
-                <th>Chunking Strategy</th>
+                <th>
+                  Chunking Strategy <DocLink featureName="chunking-strategy" />
+                </th>
                 <th className="chunk-size-header">
                   <span className="chunk-size-header-row">
                     Chunk size / overlap
