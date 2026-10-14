@@ -68,7 +68,12 @@ export default function DocLink({ featureName }: DocLinkProps) {
     try {
       const { download_url } = await getAdminDocContent(currentIdentity, docId);
       if (newTab) {
-        newTab.location.href = download_url;
+        // Tells the opened doc which origin to route its own cross-doc nav
+        // links back to - same code path everywhere, the value just differs
+        // naturally by where the app happens to be running (localhost vs
+        // the real deployed site). S3 never sees this - a URL fragment
+        // isn't part of what a presigned URL's signature covers.
+        newTab.location.href = `${download_url}#app_base=${encodeURIComponent(window.location.origin)}`;
       } else {
         setError("Your browser blocked the new tab - allow pop-ups for this site.");
       }

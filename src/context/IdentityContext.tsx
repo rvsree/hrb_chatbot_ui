@@ -46,9 +46,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // live in this project's own logs). Runs once on mount only - re-uses
   // the exact same validateLogin() call the login form itself uses, so
   // "known persona" is defined in exactly one place, not duplicated here.
-  // Only an explicit 401/UNKNOWN_PERSONA rejection logs the user out - a
-  // network error or backend hiccup must not punish an otherwise-valid
-  // session.
+  //
+  // Only an UNKNOWN_PERSONA rejection logs the user out - checking the
+  // error CODE, not just a 401 status, matters specifically for an admin:
+  // this call never has a secret code to send (never stored client-side),
+  // so for role=admin the backend always rejects it with a real 401
+  // (INVALID_ADMIN_SECRET_CODE) that has nothing to do with the persona
+  // being valid. Checking status alone silently logged out every admin on
+  // every page load/refresh - found live, confirmed via network trace.
   useEffect(() => {
     if (!identity) {
       return;
@@ -58,7 +63,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       if (cancelled) {
         return;
       }
-      if (error instanceof ApiRequestError && error.status === 401) {
+      if (error instanceof ApiRequestError && error.code === "UNKNOWN_PERSONA") {
         setIdentity(null);
       }
     });

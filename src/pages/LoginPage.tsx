@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiRequestError, validateLogin } from "../api/client";
 import { useIdentity } from "../context/IdentityContext";
 import type { Role } from "../types";
+import EyeIcon from "../components/EyeIcon";
 
 export default function LoginPage() {
   const { login } = useIdentity();
@@ -13,6 +14,17 @@ export default function LoginPage() {
   const [secretCode, setSecretCode] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [showEmployeeId, setShowEmployeeId] = useState(false);
+  const [showFullName, setShowFullName] = useState(false);
+  const [showSecretCode, setShowSecretCode] = useState(false);
+
+  function handleRoleChange(newRole: Role) {
+    setRole(newRole);
+    if (newRole === "admin") {
+      setEmployeeId("ADM001");
+      setFullName("Sree Rad");
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -40,32 +52,51 @@ export default function LoginPage() {
     <div className="centered-page">
       <form className="card login-card" onSubmit={handleSubmit}>
         <h1>HRB Chatbot</h1>
-        <p className="dev-note">
-          Sign-in is checked against a small known-personas list on the backend (Phase 106) -
-          an unknown id/name/role combo is denied. This still isn't real authentication: once
-          signed in, role is self-asserted on every request, same as before (see BACKLOG.md).
-        </p>
 
         <label htmlFor="employee-id">Employee ID</label>
-        <input
-          id="employee-id"
-          value={employeeId}
-          onChange={(event) => setEmployeeId(event.target.value)}
-          placeholder="E100"
-          required
-        />
+        <div className="input-with-toggle">
+          <input
+            id="employee-id"
+            type={showEmployeeId ? "text" : "password"}
+            value={employeeId}
+            onChange={(event) => setEmployeeId(event.target.value)}
+            placeholder="E100"
+            required
+          />
+          <button
+            type="button"
+            className="input-toggle-button"
+            onClick={() => setShowEmployeeId((current) => !current)}
+            aria-label={showEmployeeId ? "Hide employee ID" : "Show employee ID"}
+            title={showEmployeeId ? "Hide" : "Show"}
+          >
+            <EyeIcon open={showEmployeeId} size={16} />
+          </button>
+        </div>
 
         <label htmlFor="full-name">Full name</label>
-        <input
-          id="full-name"
-          value={fullName}
-          onChange={(event) => setFullName(event.target.value)}
-          placeholder="Jane Doe"
-          required
-        />
+        <div className="input-with-toggle">
+          <input
+            id="full-name"
+            type={showFullName ? "text" : "password"}
+            value={fullName}
+            onChange={(event) => setFullName(event.target.value)}
+            placeholder="Jane Doe"
+            required
+          />
+          <button
+            type="button"
+            className="input-toggle-button"
+            onClick={() => setShowFullName((current) => !current)}
+            aria-label={showFullName ? "Hide full name" : "Show full name"}
+            title={showFullName ? "Hide" : "Show"}
+          >
+            <EyeIcon open={showFullName} size={16} />
+          </button>
+        </div>
 
         <label htmlFor="role">Role</label>
-        <select id="role" value={role} onChange={(event) => setRole(event.target.value as Role)}>
+        <select id="role" value={role} onChange={(event) => handleRoleChange(event.target.value as Role)}>
           <option value="employee">Employee</option>
           <option value="manager">Manager</option>
           <option value="hr_support">HR Support</option>
@@ -75,14 +106,25 @@ export default function LoginPage() {
         {role === "admin" && (
           <>
             <label htmlFor="secret-code">Secret code</label>
-            <input
-              id="secret-code"
-              type="password"
-              value={secretCode}
-              onChange={(event) => setSecretCode(event.target.value)}
-              placeholder="Admin secret code"
-              required
-            />
+            <div className="input-with-toggle">
+              <input
+                id="secret-code"
+                type={showSecretCode ? "text" : "password"}
+                value={secretCode}
+                onChange={(event) => setSecretCode(event.target.value)}
+                placeholder="Admin secret code"
+                required
+              />
+              <button
+                type="button"
+                className="input-toggle-button"
+                onClick={() => setShowSecretCode((current) => !current)}
+                aria-label={showSecretCode ? "Hide secret code" : "Show secret code"}
+                title={showSecretCode ? "Hide" : "Show"}
+              >
+                <EyeIcon open={showSecretCode} size={16} />
+              </button>
+            </div>
           </>
         )}
 

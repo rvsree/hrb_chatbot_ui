@@ -446,7 +446,7 @@ export default function DocumentsPage() {
                 <th>Elapsed</th>
                 <th>Chunks</th>
                 <th>
-                  Chunking Strategy <DocLink featureName="upload-documents" />
+                  Chunking Strategy <DocLink featureName="chunking-strategy" />
                 </th>
                 <th className="chunk-size-header">
                   <span className="chunk-size-header-row">
