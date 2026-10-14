@@ -55,10 +55,16 @@ export default function DocLink({ featureName }: DocLinkProps) {
     // Opened synchronously, inside the click handler's own call stack - a
     // tab opened *after* an awaited fetch loses the browser's "this came
     // from a real click" association, and Chrome silently blocks it (no
-    // error, nothing visibly happens - matches the reported symptom
-    // exactly). Opening blank first, then redirecting it once the real
-    // URL is known, keeps the open() call itself synchronous.
-    const newTab = window.open("", "_blank", "noopener,noreferrer");
+    // error, nothing visibly happens). Opening blank first, then
+    // redirecting it once the real URL is known, keeps the open() call
+    // itself synchronous. Deliberately no "noopener"/"noreferrer" here -
+    // either one makes window.open() return null (confirmed live: the
+    // tab opened but stayed on about:blank forever, since there was no
+    // reference left to redirect) - we need the reference to navigate
+    // this tab a moment later, to our own vetted S3 URL, not arbitrary
+    // user input, so the reverse-tabnabbing risk those flags guard
+    // against doesn't apply the way it would for a third-party link.
+    const newTab = window.open("", "_blank");
     try {
       const { download_url } = await getAdminDocContent(currentIdentity, docId);
       if (newTab) {
