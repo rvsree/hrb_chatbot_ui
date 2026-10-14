@@ -408,7 +408,7 @@ export default function DocumentsPage() {
     <div className="centered-page">
       <div className="card documents-card">
         <h1>
-          Indexed documents <DocLink featureName="manage-documents" />
+          Indexed documents <DocLink featureName="upload-documents" />
         </h1>
         <p>
           <Link to="/chat">Back to chat</Link> · <Link to="/upload">Upload more</Link> ·{" "}
@@ -446,7 +446,7 @@ export default function DocumentsPage() {
                 <th>Elapsed</th>
                 <th>Chunks</th>
                 <th>
-                  Chunking Strategy <DocLink featureName="chunking-strategy" />
+                  Chunking Strategy <DocLink featureName="upload-documents" />
                 </th>
                 <th className="chunk-size-header">
                   <span className="chunk-size-header-row">
