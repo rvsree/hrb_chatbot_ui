@@ -21,7 +21,7 @@ export default function LeaveApprovalsPage() {
   const [selectedRequest, setSelectedRequest] = useState<HrLeaveRequestSummary | null>(null);
 
   useEffect(() => {
-    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin")) {
+    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin" && identity.role !== "employee_admin")) {
       return;
     }
     refresh();
@@ -34,7 +34,7 @@ export default function LeaveApprovalsPage() {
   }
   const currentIdentity: typeof identity = identity;
 
-  if (currentIdentity.role !== "hr_support" && currentIdentity.role !== "admin") {
+  if (currentIdentity.role !== "hr_support" && currentIdentity.role !== "admin" && currentIdentity.role !== "employee_admin") {
     return (
       <div className="centered-page">
         <div className="card">
@@ -69,7 +69,7 @@ export default function LeaveApprovalsPage() {
         </h1>
         <p>
           <Link to="/chat">Back to chat</Link> · <Link to="/upload">Upload documents</Link> ·{" "}
-          <Link to="/documents">Manage documents</Link> · <Link to="/feedback">View feedback</Link>
+          <Link to="/documents">Manage documents</Link>
         </p>
         <p className="dev-note">
           Every specialist-reviewed leave request - pending, approved, and rejected. Click a row to review or see

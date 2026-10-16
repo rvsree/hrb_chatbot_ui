@@ -3,6 +3,8 @@ import { IdentityProvider, useIdentity } from "./context/IdentityContext";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
+import FaqPage from "./pages/FaqPage";
+import FaqReviewPage from "./pages/FaqReviewPage";
 import LeaveApprovalsPage from "./pages/LeaveApprovalsPage";
 import LoginPage from "./pages/LoginPage";
 import MyLeaveRequestsPage from "./pages/MyLeaveRequestsPage";
@@ -69,6 +71,22 @@ function AppRoutes() {
         element={
           <RequireIdentity>
             <MyLeaveRequestsPage />
+          </RequireIdentity>
+        }
+      />
+      <Route
+        path="/faq"
+        element={
+          <RequireIdentity>
+            <FaqPage />
+          </RequireIdentity>
+        }
+      />
+      <Route
+        path="/faq-review"
+        element={
+          <RequireIdentity>
+            <FaqReviewPage />
           </RequireIdentity>
         }
       />

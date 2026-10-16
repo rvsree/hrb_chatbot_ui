@@ -92,7 +92,7 @@ export default function UploadPage() {
   }
   const currentIdentity: typeof identity = identity;
 
-  if (identity.role !== "hr_support" && identity.role !== "admin") {
+  if (identity.role !== "hr_support" && identity.role !== "admin" && identity.role !== "employee_admin") {
     return (
       <div className="centered-page">
         <div className="card">
@@ -200,8 +200,7 @@ export default function UploadPage() {
           Document upload <DocLink featureName="upload-documents" />
         </h1>
         <p>
-          <Link to="/chat">Back to chat</Link> · <Link to="/documents">Manage documents</Link> ·{" "}
-          <Link to="/feedback">View feedback</Link>
+          <Link to="/chat">Back to chat</Link> · <Link to="/documents">Manage documents</Link>
         </p>
 
         <div className="upload-settings-row">

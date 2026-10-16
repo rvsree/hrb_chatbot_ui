@@ -888,6 +888,9 @@ export default function ChatPage() {
             {identity.full_name} ({identity.role})
           </span>
           <div className="topbar-actions">
+            <Link to="/faq" className="link-button">
+              FAQs
+            </Link>
             <div className="admin-menu" ref={adminMenuRef}>
               <button
                 type="button"
@@ -895,7 +898,16 @@ export default function ChatPage() {
                 aria-expanded={isAdminMenuOpen}
                 onClick={() => setIsAdminMenuOpen((current) => !current)}
               >
-                Admin ▾
+                {/* 2026-10-15 - the trigger label itself now names which of
+                    the two admin tiers you are, instead of one generic
+                    "Admin" label both shared - the menu contents below
+                    differ by tier too (Architecture Docs/Golden Dataset
+                    shortcuts are Engineering-Admin-only). */}
+                {identity.role === "admin"
+                  ? "Engineering Admin ▾"
+                  : identity.role === "employee_admin"
+                    ? "Employee Admin ▾"
+                    : "Admin ▾"}
               </button>
               {isAdminMenuOpen && (
                 <div className="admin-menu-dropdown">
@@ -909,29 +921,88 @@ export default function ChatPage() {
                       yet." wrapping badly in this dropdown's narrow width,
                       and the same link here was redundant with the one on
                       the page it leads to. */}
-                  {(identity.role === "hr_support" || identity.role === "admin") && (
+                  {(identity.role === "hr_support" || identity.role === "admin" || identity.role === "employee_admin") && (
                     <Link to="/upload" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                       Upload documents
                     </Link>
                   )}
-                  {(identity.role === "hr_support" || identity.role === "admin") && (
+                  {(identity.role === "hr_support" || identity.role === "admin" || identity.role === "employee_admin") && (
                     <Link to="/documents" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                       Manage documents
                     </Link>
                   )}
                   {/* Phase 178 - widened to admin: a superuser role should
-                      reach every feature, including HR Support's own. */}
-                  {(identity.role === "hr_support" || identity.role === "admin") && (
+                      reach every feature, including HR Support's own.
+                      2026-10-15 - employee_admin too, same reasoning. */}
+                  {(identity.role === "hr_support" || identity.role === "admin" || identity.role === "employee_admin") && (
                     <Link to="/leave-approvals" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                       Leave approvals
                     </Link>
                   )}
-                  <Link to="/feedback" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
-                    View feedback
-                  </Link>
-                  {identity.role === "admin" && (
+                  {(identity.role === "hr_support" || identity.role === "admin" || identity.role === "employee_admin") && (
+                    <Link to="/faq-review" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      FAQ submissions
+                    </Link>
+                  )}
+                  {(identity.role === "admin" || identity.role === "employee_admin") && (
                     <Link to="/admin" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                       Admin dashboard
+                    </Link>
+                  )}
+                  {/* 2026-10-15 - Engineering-Admin-exclusive shortcuts,
+                      straight to those two Dashboard tabs - Employee Admin
+                      never sees these, matching the backend's own
+                      ADMIN-only gate on /docs and /golden-dataset. */}
+                  {identity.role === "admin" && (
+                    <Link to="/admin?tab=docs" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      Architecture docs
+                    </Link>
+                  )}
+                  {identity.role === "admin" && (
+                    <Link
+                      to="/admin?tab=golden-dataset"
+                      className="admin-menu-item"
+                      onClick={() => setIsAdminMenuOpen(false)}
+                    >
+                      Golden dataset
+                    </Link>
+                  )}
+                  {identity.role === "admin" && (
+                    <Link to="/admin?tab=eval-runs" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      Eval runs
+                    </Link>
+                  )}
+                  {identity.role === "admin" && (
+                    <Link to="/admin?tab=ci-status" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      CI/Build status
+                    </Link>
+                  )}
+                  {identity.role === "admin" && (
+                    <Link to="/admin?tab=live-metrics" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      Live metrics
+                    </Link>
+                  )}
+                  {identity.role === "admin" && (
+                    <Link
+                      to="/admin/open-doc?feature=interview-faqs&type=system"
+                      className="admin-menu-item"
+                      onClick={() => setIsAdminMenuOpen(false)}
+                    >
+                      Interview FAQs - System Level
+                    </Link>
+                  )}
+                  {identity.role === "admin" && (
+                    <Link
+                      to="/admin/open-doc?feature=interview-faqs&type=agentic-research-systems"
+                      className="admin-menu-item"
+                      onClick={() => setIsAdminMenuOpen(false)}
+                    >
+                      Interview FAQs - Agentic Systems
+                    </Link>
+                  )}
+                  {identity.role === "admin" && (
+                    <Link to="/admin?tab=interview-qa" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      Interview Q&A (DB)
                     </Link>
                   )}
                 </div>
@@ -1095,10 +1166,9 @@ export default function ChatPage() {
               onClick={() => window.alert("Audio feature not available yet.")}
             >
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0" />
+                <line x1="12" y1="18" x2="12" y2="22" />
               </svg>
             </button>
             <button type="submit" disabled={isSending || !draft.trim()}>

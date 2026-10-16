@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiRequestError, deleteDocumentById, getHealth, listDocuments, rechunkDocument, uploadDocuments } from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
@@ -117,6 +117,12 @@ export default function DocumentsPage() {
   const [errorTarget, setErrorTarget] = useState<DocumentRecord | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  // Action-specific errors (delete/replace/rechunk one document) render
+  // inline under that document's own row instead of in the page-level
+  // `error` banner at the top - reported as too far from the control that
+  // caused it in a long, scrolled table.
+  const [rowError, setRowError] = useState<{ documentId: string; message: string } | null>(null);
   // Phase 143: replaces window.confirm() for single/bulk document delete -
   // same reported "browser warning" look as the chunking-strategy one, but
   // these use the existing centered .modal-overlay/.modal-card pattern
@@ -161,7 +167,7 @@ export default function DocumentsPage() {
   }, [documents]);
 
   useEffect(() => {
-    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin")) {
+    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin" && identity.role !== "employee_admin")) {
       return;
     }
     refresh(identity.employee_id, identity.full_name, identity.role);
@@ -176,7 +182,7 @@ export default function DocumentsPage() {
   // pending_upload) - stops itself once every document reaches a terminal
   // state, so this doesn't poll forever on an otherwise-idle page.
   useEffect(() => {
-    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin")) {
+    if (!identity || (identity.role !== "hr_support" && identity.role !== "admin" && identity.role !== "employee_admin")) {
       return;
     }
     const hasInFlightDocument = documents.some((doc) => !TERMINAL_STATUSES.has(doc.status));
@@ -196,7 +202,7 @@ export default function DocumentsPage() {
   }
   const currentIdentity: typeof identity = identity;
 
-  if (identity.role !== "hr_support" && identity.role !== "admin") {
+  if (identity.role !== "hr_support" && identity.role !== "admin" && identity.role !== "employee_admin") {
     return (
       <div className="centered-page">
         <div className="card">
@@ -247,15 +253,13 @@ export default function DocumentsPage() {
     }
     const { documentId, filename } = deleteTarget;
     setDeleteTarget(null);
+    setRowError(null);
     try {
       await deleteDocumentById(currentIdentity, documentId);
       setDocuments((current) => current.filter((doc) => doc.id !== documentId));
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        setError(`Couldn't delete "${filename}": ${err.message} (${err.code})`);
-      } else {
-        setError(`Couldn't delete "${filename}" - something went wrong reaching the backend.`);
-      }
+      const detail = err instanceof ApiRequestError ? `${err.message} (${err.code})` : "something went wrong reaching the backend.";
+      setRowError({ documentId, message: `Couldn't delete "${filename}": ${detail}` });
     }
   }
 
@@ -289,7 +293,7 @@ export default function DocumentsPage() {
       return;
     }
     setIsBulkDeleting(true);
-    setError(null);
+    setBulkError(null);
     const failures: string[] = [];
     await Promise.all(
       targets.map(async (doc) => {
@@ -304,7 +308,7 @@ export default function DocumentsPage() {
     setSelectedIds(new Set());
     setIsBulkDeleting(false);
     if (failures.length > 0) {
-      setError(`Couldn't delete: ${failures.join(", ")}`);
+      setBulkError(`Couldn't delete: ${failures.join(", ")}`);
     }
   }
 
@@ -315,7 +319,7 @@ export default function DocumentsPage() {
       return;
     }
     setReplacingId(documentId);
-    setError(null);
+    setRowError(null);
     try {
       // supersedes_document_id marks the old version not-current and
       // indexes this file as the new current one - existing backend
@@ -323,11 +327,8 @@ export default function DocumentsPage() {
       await uploadDocuments(currentIdentity, [file], documentId);
       await refresh(currentIdentity.employee_id, currentIdentity.full_name, currentIdentity.role);
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        setError(`Couldn't replace "${filename}": ${err.message} (${err.code})`);
-      } else {
-        setError(`Couldn't replace "${filename}" - something went wrong reaching the backend.`);
-      }
+      const detail = err instanceof ApiRequestError ? `${err.message} (${err.code})` : "something went wrong reaching the backend.";
+      setRowError({ documentId, message: `Couldn't replace "${filename}": ${detail}` });
     } finally {
       setReplacingId(null);
     }
@@ -388,16 +389,13 @@ export default function DocumentsPage() {
     setShowChunkingHelp(false);
     setSelectedStrategy((current) => ({ ...current, [documentId]: chunkingStrategy }));
     setRechunkingId(documentId);
-    setError(null);
+    setRowError(null);
     try {
       await rechunkDocument(currentIdentity, documentId, chunkingStrategy, chunkSize, chunkOverlap);
       await refresh(currentIdentity.employee_id, currentIdentity.full_name, currentIdentity.role);
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        setError(`Couldn't re-chunk "${filename}": ${err.message} (${err.code})`);
-      } else {
-        setError(`Couldn't re-chunk "${filename}" - something went wrong reaching the backend.`);
-      }
+      const detail = err instanceof ApiRequestError ? `${err.message} (${err.code})` : "something went wrong reaching the backend.";
+      setRowError({ documentId, message: `Couldn't re-chunk "${filename}": ${detail}` });
     } finally {
       setRechunkingId(null);
       setSelectedStrategy((current) => ({ ...current, [documentId]: "" }));
@@ -411,8 +409,7 @@ export default function DocumentsPage() {
           Indexed documents <DocLink featureName="upload-documents" />
         </h1>
         <p>
-          <Link to="/chat">Back to chat</Link> · <Link to="/upload">Upload more</Link> ·{" "}
-          <Link to="/feedback">View feedback</Link>
+          <Link to="/chat">Back to chat</Link> · <Link to="/upload">Upload more</Link>
         </p>
 
         {isLoading && <p>Loading...</p>}
@@ -427,6 +424,7 @@ export default function DocumentsPage() {
             <button type="button" disabled={selectedIds.size === 0 || isBulkDeleting} onClick={handleBulkDelete}>
               {isBulkDeleting ? "Deleting..." : "Delete selected"}
             </button>
+            {bulkError && <p className="error-banner" style={{ margin: 0 }}>{bulkError}</p>}
           </div>
           <div className="documents-table-scroll">
           <table className="documents-table">
@@ -486,7 +484,8 @@ export default function DocumentsPage() {
             </thead>
             <tbody>
               {documents.map((doc) => (
-                <tr key={doc.id}>
+                <Fragment key={doc.id}>
+                <tr>
                   <td>
                     <input
                       type="checkbox"
@@ -697,6 +696,14 @@ export default function DocumentsPage() {
                     </div>
                   </td>
                 </tr>
+                {rowError?.documentId === doc.id && (
+                  <tr>
+                    <td colSpan={11} style={{ padding: "0 12px 10px" }}>
+                      <p className="error-banner" style={{ margin: 0 }}>{rowError.message}</p>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

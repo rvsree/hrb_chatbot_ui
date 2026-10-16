@@ -35,7 +35,10 @@ export default function LeaveReviewModal({ request, onClose, onResolved }: Leave
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const isAdmin = identity?.role === "admin";
+  // 2026-10-15 - both admin tiers (Engineering/Employee) get the same
+  // read-only + Delete view here, never the resolve form - see the
+  // comment above this component for why.
+  const isAdmin = identity?.role === "admin" || identity?.role === "employee_admin";
   const isPending = request.status === "PENDING";
 
   async function handleDelete() {

@@ -1,4 +1,4 @@
-export type Role = "employee" | "manager" | "hr_support" | "admin";
+export type Role = "employee" | "manager" | "hr_support" | "admin" | "employee_admin";
 
 export interface UserProfile {
   employee_id: string;
@@ -540,7 +540,169 @@ export interface AdminDocListResponse {
   docs: AdminDocSummary[];
 }
 
+// Phase 181 - Deployment Dashboard's golden-dataset viewer. raw_case is the
+// full original JSON case object (fields vary by dataset), not re-typed
+// field-by-field here.
+export interface GoldenDatasetCaseSummary {
+  id: number;
+  case_key: string;
+  dataset: string;
+  category: string | null;
+  query: string | null;
+  raw_case: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoldenDatasetListResponse {
+  count: number;
+  cases: GoldenDatasetCaseSummary[];
+}
+
+// Phase 182 - Deployment Dashboard's Eval Runs history, persisted by
+// scripts/run_release_gate.py on every real run.
+export interface EvalRunSummary {
+  id: number;
+  run_at: string;
+  decision: string;
+  flags: string[];
+  aggregated_scores: Record<string, number>;
+  total_cases: number;
+  scored_cases: number;
+  failed_case_ids: string[];
+  retrieval_k: number;
+}
+
+export interface EvalRunListResponse {
+  count: number;
+  runs: EvalRunSummary[];
+}
+
+export interface EvalRunCaseDetail {
+  case_id: string;
+  category: string | null;
+  scores: Record<string, number>;
+  status: string;
+}
+
+export interface EvalRunDetail extends EvalRunSummary {
+  cases: EvalRunCaseDetail[];
+}
+
+// Phase 183 - Deployment Dashboard's CI/Build Status tab.
+export interface WorkflowRunSummary {
+  id: number;
+  status: string;
+  conclusion: string | null;
+  head_sha: string;
+  head_commit_message: string;
+  html_url: string;
+  created_at: string;
+}
+
+export interface WorkflowStatus {
+  runs: WorkflowRunSummary[];
+  error: string | null;
+}
+
+export interface CiStatusResponse {
+  ci: WorkflowStatus;
+  deploy: WorkflowStatus;
+}
+
+// Phase 184 - Deployment Dashboard's Live Metrics tab. No cost_usd field -
+// no verified per-model price table exists in this project yet.
+export interface PipelineMetricsRow {
+  pipeline: string;
+  status: string;
+  request_count: number;
+  avg_latency_ms: number | null;
+  p50_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  total_tokens: number | null;
+}
+
+export interface RequestMetricsResponse {
+  window_hours: number;
+  rows: PipelineMetricsRow[];
+}
+
 export interface AdminDocContentResponse {
   download_url: string;
   expires_in_seconds: number;
+}
+
+// Phase 186 - FAQ submission: real-time LLM first-pass answer, then
+// human/Claude review before publishing.
+export interface FaqSubmissionRecord {
+  id: number;
+  employee_id: string;
+  query: string;
+  external_llm_answer: string | null;
+  internal_review_status: string;
+  answer_restructuring_status: string;
+  final_answer: string | null;
+  published: boolean;
+  reviewed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FaqSubmissionListResponse {
+  count: number;
+  submissions: FaqSubmissionRecord[];
+}
+
+export interface PublishedFaq {
+  id: number;
+  query: string;
+  final_answer: string | null;
+}
+
+export interface PublishedFaqListResponse {
+  count: number;
+  faqs: PublishedFaq[];
+}
+
+// Phase 187 - Interview Q&A as real, editable DB rows (not just static
+// HTML) - the 7-part answer structure plus tech_stack/feature_references
+// for jumping to the real implementing code.
+export interface KeywordEntry {
+  term: string;
+  definition: string;
+}
+
+export interface FeatureReference {
+  label: string;
+  file_path: string;
+}
+
+export interface InterviewQaCardFields {
+  topic: string;
+  topic_order: number;
+  card_order: number;
+  question: string;
+  hint: string | null;
+  concept: string | null;
+  situation: string | null;
+  task: string | null;
+  action: string | null;
+  result: string | null;
+  project_link: string | null;
+  leadership_angle: string | null;
+  trade_offs: string[];
+  keywords: KeywordEntry[];
+  tech_stack: string[];
+  feature_references: FeatureReference[];
+}
+
+export interface InterviewQaCard extends InterviewQaCardFields {
+  id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InterviewQaListResponse {
+  count: number;
+  cards: InterviewQaCard[];
 }

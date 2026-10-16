@@ -17,12 +17,55 @@ export default function LoginPage() {
   const [showEmployeeId, setShowEmployeeId] = useState(false);
   const [showFullName, setShowFullName] = useState(false);
   const [showSecretCode, setShowSecretCode] = useState(false);
+  // Milestone 2 - employee_id/full_name reveal is gated on the secret
+  // code being objectively correct, for the admin role only. Checked on
+  // blur, not on every keystroke - a check-per-keystroke would mean a
+  // real login attempt per keystroke, which would collide with the
+  // lockout Milestone 3 adds (a user's own typos while typing the
+  // correct code could lock them out before they finish).
+  const [isSecretCodeVerified, setIsSecretCodeVerified] = useState(false);
+  const [isCheckingSecretCode, setIsCheckingSecretCode] = useState(false);
+  const isAdminTier = role === "admin" || role === "employee_admin";
+  const revealGatedOnSecretCode = isAdminTier;
+  const revealAllowed = !revealGatedOnSecretCode || isSecretCodeVerified;
+
+  function handleSecretCodeChange(value: string) {
+    setSecretCode(value);
+    // Stale verification from a previous value must not keep reveal open
+    // once the field changes again - re-collapse until the next blur re-checks.
+    if (isSecretCodeVerified) {
+      setIsSecretCodeVerified(false);
+      setShowEmployeeId(false);
+      setShowFullName(false);
+    }
+  }
+
+  async function handleSecretCodeBlur() {
+    if (!isAdminTier || !employeeId.trim() || !fullName.trim() || !secretCode.trim()) {
+      return;
+    }
+    setIsCheckingSecretCode(true);
+    try {
+      await validateLogin(employeeId.trim(), fullName.trim(), role, secretCode.trim(), false);
+      setIsSecretCodeVerified(true);
+    } catch {
+      setIsSecretCodeVerified(false);
+    } finally {
+      setIsCheckingSecretCode(false);
+    }
+  }
 
   function handleRoleChange(newRole: Role) {
     setRole(newRole);
+    setIsSecretCodeVerified(false);
+    setShowEmployeeId(false);
+    setShowFullName(false);
     if (newRole === "admin") {
       setEmployeeId("ADM001");
       setFullName("Sree Rad");
+    } else if (newRole === "employee_admin") {
+      setEmployeeId("ADM002");
+      setFullName("Erin Admin");
     }
   }
 
@@ -67,8 +110,9 @@ export default function LoginPage() {
             type="button"
             className="input-toggle-button"
             onClick={() => setShowEmployeeId((current) => !current)}
+            disabled={!revealAllowed}
             aria-label={showEmployeeId ? "Hide employee ID" : "Show employee ID"}
-            title={showEmployeeId ? "Hide" : "Show"}
+            title={revealAllowed ? (showEmployeeId ? "Hide" : "Show") : "Enter the correct secret code to reveal"}
           >
             <EyeIcon open={showEmployeeId} size={16} />
           </button>
@@ -88,8 +132,9 @@ export default function LoginPage() {
             type="button"
             className="input-toggle-button"
             onClick={() => setShowFullName((current) => !current)}
+            disabled={!revealAllowed}
             aria-label={showFullName ? "Hide full name" : "Show full name"}
-            title={showFullName ? "Hide" : "Show"}
+            title={revealAllowed ? (showFullName ? "Hide" : "Show") : "Enter the correct secret code to reveal"}
           >
             <EyeIcon open={showFullName} size={16} />
           </button>
@@ -100,10 +145,11 @@ export default function LoginPage() {
           <option value="employee">Employee</option>
           <option value="manager">Manager</option>
           <option value="hr_support">HR Support</option>
-          <option value="admin">Admin</option>
+          <option value="admin">Engineering Admin</option>
+          <option value="employee_admin">Employee Admin</option>
         </select>
 
-        {role === "admin" && (
+        {isAdminTier && (
           <>
             <label htmlFor="secret-code">Secret code</label>
             <div className="input-with-toggle">
@@ -111,7 +157,8 @@ export default function LoginPage() {
                 id="secret-code"
                 type={showSecretCode ? "text" : "password"}
                 value={secretCode}
-                onChange={(event) => setSecretCode(event.target.value)}
+                onChange={(event) => handleSecretCodeChange(event.target.value)}
+                onBlur={handleSecretCodeBlur}
                 placeholder="Admin secret code"
                 required
               />
@@ -125,6 +172,10 @@ export default function LoginPage() {
                 <EyeIcon open={showSecretCode} size={16} />
               </button>
             </div>
+            {isCheckingSecretCode && <p className="dev-note-inline">Checking...</p>}
+            {!isCheckingSecretCode && isSecretCodeVerified && (
+              <p className="dev-note-inline">Secret code verified - employee ID and full name can now be revealed.</p>
+            )}
           </>
         )}
 

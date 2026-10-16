@@ -22,7 +22,7 @@ export default function ResetSecretCodePage() {
     navigate("/login");
     return null;
   }
-  if (identity.role !== "admin") {
+  if (identity.role !== "admin" && identity.role !== "employee_admin") {
     navigate("/chat");
     return null;
   }

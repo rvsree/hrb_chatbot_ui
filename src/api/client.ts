@@ -17,8 +17,18 @@ import type {
   DocumentUploadResult,
   FeedbackListResponse,
   FeedbackVote,
+  CiStatusResponse,
+  EvalRunDetail,
+  EvalRunListResponse,
+  FaqSubmissionListResponse,
+  FaqSubmissionRecord,
   GenaiRagOptions,
+  RequestMetricsResponse,
+  GoldenDatasetListResponse,
   HrLeaveRequestsResponse,
+  InterviewQaCard,
+  InterviewQaCardFields,
+  InterviewQaListResponse,
   LeaveDocumentDownloadUrlResponse,
   LeaveDocumentUploadUrlResponse,
   LeaveTypeCode,
@@ -26,6 +36,7 @@ import type {
   MyLeaveRequestsResponse,
   PendingHitlRequestsResponse,
   PresignedUploadResponse,
+  PublishedFaqListResponse,
   RagQueryResponse,
   ResolveHitlRequestResponse,
   UnpaidLeaveRequestResponse,
@@ -422,11 +433,21 @@ export async function validateLogin(
   fullName: string,
   role: string,
   secretCode?: string,
+  // Milestone 3 - false for the login page's own speculative blur-check
+  // (does this secret code unlock the reveal icons?), so it never counts
+  // toward the backend's lockout. True (the default) for a real Sign In click.
+  countAsAttempt = true,
 ): Promise<LoginResult> {
   const response = await fetch(`${API_BASE_URL}/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ employee_id: employeeId, full_name: fullName, role, secret_code: secretCode }),
+    body: JSON.stringify({
+      employee_id: employeeId,
+      full_name: fullName,
+      role,
+      secret_code: secretCode,
+      count_as_attempt: countAsAttempt,
+    }),
   });
 
   if (!response.ok) {
@@ -785,6 +806,77 @@ export async function listAdminDocs(userProfile: UserProfile): Promise<AdminDocL
   return (await response.json()) as AdminDocListResponse;
 }
 
+export async function listGoldenDataset(userProfile: UserProfile): Promise<GoldenDatasetListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/golden-dataset?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as GoldenDatasetListResponse;
+}
+
+export async function listEvalRuns(userProfile: UserProfile): Promise<EvalRunListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/eval-runs?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as EvalRunListResponse;
+}
+
+export async function getEvalRun(userProfile: UserProfile, runId: number): Promise<EvalRunDetail> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/eval-runs/${runId}?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as EvalRunDetail;
+}
+
+export async function getCiStatus(userProfile: UserProfile): Promise<CiStatusResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/ci-status?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as CiStatusResponse;
+}
+
+export async function getRequestMetrics(userProfile: UserProfile, windowHours = 24): Promise<RequestMetricsResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+    window: String(windowHours),
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/request-metrics?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as RequestMetricsResponse;
+}
+
 export async function getAdminDocContent(userProfile: UserProfile, docId: number): Promise<AdminDocContentResponse> {
   const params = new URLSearchParams({
     employee_id: userProfile.employee_id,
@@ -806,4 +898,142 @@ export async function getHealth(): Promise<{ embedding_model: string }> {
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as { embedding_model: string };
+}
+
+export async function submitFaqQuestion(userProfile: UserProfile, query: string): Promise<FaqSubmissionRecord> {
+  const response = await fetch(`${API_BASE_URL}/v1/faq/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile, query }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FaqSubmissionRecord;
+}
+
+export async function listPublishedFaqs(userProfile: UserProfile): Promise<PublishedFaqListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/faq/published?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as PublishedFaqListResponse;
+}
+
+export async function listFaqSubmissions(userProfile: UserProfile): Promise<FaqSubmissionListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/faq-submissions?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FaqSubmissionListResponse;
+}
+
+export async function restructureFaqSubmission(userProfile: UserProfile, submissionId: number): Promise<FaqSubmissionRecord> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/faq-submissions/${submissionId}/restructure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FaqSubmissionRecord;
+}
+
+export async function reviewFaqSubmission(
+  userProfile: UserProfile,
+  submissionId: number,
+  internalReviewStatus: string,
+  finalAnswer: string | null,
+  published: boolean,
+): Promise<FaqSubmissionRecord> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/faq-submissions/${submissionId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      internal_review_status: internalReviewStatus,
+      final_answer: finalAnswer,
+      published,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FaqSubmissionRecord;
+}
+
+// Phase 187 - Interview Q&A as real, editable DB rows, filterable by topic.
+export async function listInterviewQaCards(userProfile: UserProfile, topic?: string): Promise<InterviewQaListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  if (topic) {
+    params.set("topic", topic);
+  }
+  const response = await fetch(`${API_BASE_URL}/v1/admin/interview-qa?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as InterviewQaListResponse;
+}
+
+export async function createInterviewQaCard(userProfile: UserProfile, fields: InterviewQaCardFields): Promise<InterviewQaCard> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/interview-qa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile, fields }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as InterviewQaCard;
+}
+
+export async function updateInterviewQaCard(
+  userProfile: UserProfile,
+  cardId: number,
+  fields: InterviewQaCardFields,
+): Promise<InterviewQaCard> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/interview-qa/${cardId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile, fields }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as InterviewQaCard;
+}
+
+export async function deleteInterviewQaCard(userProfile: UserProfile, cardId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/interview-qa/${cardId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
 }
