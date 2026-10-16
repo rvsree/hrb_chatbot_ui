@@ -35,6 +35,8 @@ import type {
   MultiAgenticRagResponse,
   MyLeaveRequestsResponse,
   PendingHitlRequestsResponse,
+  PipelineSnapshotListResponse,
+  PipelineStatusResponse,
   PresignedUploadResponse,
   PublishedFaqListResponse,
   RagQueryResponse,
@@ -860,6 +862,54 @@ export async function getCiStatus(userProfile: UserProfile): Promise<CiStatusRes
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as CiStatusResponse;
+}
+
+// Phase 188 - one commit's full pipeline (every workflow file that ran for
+// it, stitched together, plus its nearest eval-gate result). sha omitted
+// defaults to the most recently run commit.
+export async function getPipelineStatus(userProfile: UserProfile, sha?: string): Promise<PipelineStatusResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  if (sha) {
+    params.set("sha", sha);
+  }
+  const response = await fetch(`${API_BASE_URL}/v1/admin/ci-status/pipeline?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as PipelineStatusResponse;
+}
+
+export async function listPipelineSnapshots(userProfile: UserProfile): Promise<PipelineSnapshotListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/ci-status/pipeline/history?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as PipelineSnapshotListResponse;
+}
+
+export async function getPipelineSnapshot(userProfile: UserProfile, snapshotId: number): Promise<PipelineStatusResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/ci-status/pipeline/history/${snapshotId}?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as PipelineStatusResponse;
 }
 
 export async function getRequestMetrics(userProfile: UserProfile, windowHours = 24): Promise<RequestMetricsResponse> {

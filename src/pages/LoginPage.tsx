@@ -145,8 +145,8 @@ export default function LoginPage() {
           <option value="employee">Employee</option>
           <option value="manager">Manager</option>
           <option value="hr_support">HR Support</option>
-          <option value="admin">Engineering Admin</option>
-          <option value="employee_admin">Employee Admin</option>
+          <option value="admin">DevOps</option>
+          <option value="employee_admin">Admin</option>
         </select>
 
         {isAdminTier && (

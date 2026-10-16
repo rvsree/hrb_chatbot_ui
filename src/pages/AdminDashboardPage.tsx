@@ -9,6 +9,8 @@ import {
   getAdminDocContent,
   getCiStatus,
   getEvalRun,
+  getPipelineSnapshot,
+  getPipelineStatus,
   getRequestMetrics,
   listAdminDocs,
   listAllConversationsAdmin,
@@ -17,12 +19,14 @@ import {
   listEvalRuns,
   listGoldenDataset,
   listInterviewQaCards,
+  listPipelineSnapshots,
 } from "../api/client";
 import AdminConversationModal from "../components/AdminConversationModal";
 import AdminFeedbackModal from "../components/AdminFeedbackModal";
 import InterviewQaCardView from "../components/InterviewQaCardView";
 import InterviewQaEditorModal from "../components/InterviewQaEditorModal";
 import LeaveReviewModal from "../components/LeaveReviewModal";
+import PipelineStepper from "../components/PipelineStepper";
 import DocumentsPage from "./DocumentsPage";
 import UploadPage from "./UploadPage";
 import { useIdentity } from "../context/IdentityContext";
@@ -39,6 +43,8 @@ import {
   type InterviewQaCard,
   type LeaveTypeCode,
   type PipelineMetricsRow,
+  type PipelineSnapshotSummary,
+  type PipelineStatusResponse,
   type WorkflowStatus,
 } from "../types";
 
@@ -70,7 +76,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   docs: "Architecture Docs",
   "golden-dataset": "Golden Dataset",
   "eval-runs": "Eval Runs",
-  "ci-status": "CI/Build Status",
+  "ci-status": "CI/CD Pipeline",
   "live-metrics": "Live Metrics",
   "interview-qa": "Interview Q&A",
 };
@@ -92,6 +98,45 @@ const COUNTED_TABS = [
 // about in the first place.
 const ADMIN_TAB_KEYS = Object.keys(TAB_LABELS) as AdminTab[];
 
+// Phase 191 - 11 flat tabs replaced with 2 levels: a parent category row,
+// then that category's own sub-tabs. "Admin" (upload/manage documents,
+// conversations, feedback) and "HR Ops" (leave approvals) are visible to
+// both admin tiers; "Build & Deployment" and "Interview Q&A" are
+// DevOps-only, same split the backend's own routes already enforce -
+// gating now happens per category instead of per tab.
+type AdminCategory = "admin" | "hr-ops" | "build-deploy" | "interview-qa-ref";
+
+const CATEGORY_LABELS: Record<AdminCategory, string> = {
+  admin: "Admin",
+  "hr-ops": "HR Ops",
+  "build-deploy": "Build & Deployment",
+  "interview-qa-ref": "Interview Q&A",
+};
+
+const CATEGORY_TABS: Record<AdminCategory, AdminTab[]> = {
+  admin: ["documents", "upload", "conversations", "feedback"],
+  "hr-ops": ["leave-requests"],
+  // Phase 197 - CI/CD Pipeline first (and the category's default focus,
+  // via handleSelectCategory's [0] pick) - golden-dataset moved out to
+  // interview-qa-ref below, since it's reference content (the 40 test
+  // case definitions themselves), not pipeline execution history. Eval
+  // Runs stays here - that one really is CI/CD execution history.
+  "build-deploy": ["ci-status", "eval-runs", "live-metrics"],
+  "interview-qa-ref": ["docs", "golden-dataset", "interview-qa"],
+};
+
+const CATEGORY_ORDER: AdminCategory[] = ["admin", "hr-ops", "build-deploy", "interview-qa-ref"];
+const DEVOPS_ONLY_CATEGORIES: AdminCategory[] = ["build-deploy", "interview-qa-ref"];
+
+function categoryForTab(tab: AdminTab): AdminCategory {
+  for (const category of CATEGORY_ORDER) {
+    if (CATEGORY_TABS[category].includes(tab)) {
+      return category;
+    }
+  }
+  return "admin";
+}
+
 // Phase 184 - curated fine-tune-recommendation text per metric, for the
 // Live Metrics tab's "?" popups. Grounded in this project's own real,
 // already-documented BACKLOG.md findings - not generic advice, and never
@@ -112,14 +157,16 @@ export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // 2026-10-15 - ?tab= deep-links from the Admin dropdown's Engineering-
-  // Admin-only shortcuts (Architecture docs/Golden dataset). Falls back to
-  // "documents" for a missing/unrecognized value - never trusts the query
-  // string blindly. Access is still enforced server-side regardless of
-  // which tab this opens on.
+  // 2026-10-15 - ?tab= deep-links from the Admin dropdown's shortcuts.
+  // Falls back to "documents" for a missing/unrecognized value - never
+  // trusts the query string blindly. Access is still enforced server-side
+  // regardless of which tab this opens on. Phase 191 - the parent category
+  // is derived from the deep-linked tab, so a shortcut still lands on the
+  // right category/sub-tab pair, not just the right sub-tab in isolation.
   const requestedTab = searchParams.get("tab");
   const initialTab: AdminTab = ADMIN_TAB_KEYS.includes(requestedTab as AdminTab) ? (requestedTab as AdminTab) : "documents";
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
+  const [activeCategory, setActiveCategory] = useState<AdminCategory>(categoryForTab(initialTab));
   const [searchQuery, setSearchQuery] = useState("");
   const [conversations, setConversations] = useState<AdminConversationSummary[]>([]);
   const [feedback, setFeedback] = useState<FeedbackRecord[]>([]);
@@ -137,6 +184,10 @@ export default function AdminDashboardPage() {
   const [editingInterviewQaCard, setEditingInterviewQaCard] = useState<InterviewQaCard | null>(null);
   const [isAddingInterviewQaCard, setIsAddingInterviewQaCard] = useState(false);
   const [interviewQaDeleteError, setInterviewQaDeleteError] = useState<string | null>(null);
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatusResponse | null>(null);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [pipelineSnapshots, setPipelineSnapshots] = useState<PipelineSnapshotSummary[]>([]);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | "live">("live");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -163,6 +214,62 @@ export default function AdminDashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity]);
 
+  // Phase 188 - the Pipeline stepper fetches on its own, separately from
+  // the shared refresh() above (it can mean several GitHub API calls per
+  // fetch, so it only runs while this one tab is actually open). Polls
+  // every 10s by self-rescheduling only while a run is still in_progress/
+  // queued - stops rescheduling once everything's terminal. Phase 189 -
+  // only polls the *live* view; viewing a past snapshot (selectedSnapshotId
+  // !== "live") pauses this so the picked history isn't overwritten.
+  useEffect(() => {
+    if (!identity || identity.role !== "admin" || activeTab !== "ci-status" || selectedSnapshotId !== "live") {
+      return;
+    }
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    async function fetchPipeline() {
+      try {
+        const result = await getPipelineStatus(identity!);
+        if (cancelled) return;
+        setPipelineStatus(result);
+        setPipelineError(null);
+        const stillRunning = result.runs.some((run) => run.status === "in_progress" || run.status === "queued");
+        if (stillRunning) {
+          timeoutId = window.setTimeout(fetchPipeline, 10000);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setPipelineError(err instanceof ApiRequestError ? err.message : "Could not load pipeline status.");
+      }
+    }
+
+    fetchPipeline();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity, activeTab, selectedSnapshotId]);
+
+  // Phase 189 - the run picker's own list, fetched once per tab-open (not
+  // polled - history doesn't change as fast as a live run's own status).
+  useEffect(() => {
+    if (!identity || identity.role !== "admin" || activeTab !== "ci-status") {
+      return;
+    }
+    listPipelineSnapshots(identity)
+      .then((result) => setPipelineSnapshots(result.snapshots))
+      .catch(() => {
+        // Best-effort - the picker just stays empty rather than blocking
+        // the live pipeline view above it.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity, activeTab]);
+
   if (!identity) {
     navigate("/login");
     return null;
@@ -174,7 +281,7 @@ export default function AdminDashboardPage() {
       <div className="centered-page">
         <div className="card">
           <h1>Admin dashboard</h1>
-          <p>Only Admin and Employee Admin can access this page - the backend rejects any other role.</p>
+          <p>Only DevOps and Admin can access this page - the backend rejects any other role.</p>
           <p>
             <Link to="/chat">Back to chat</Link>
           </p>
@@ -307,6 +414,37 @@ export default function AdminDashboardPage() {
     await refresh();
   }
 
+  // Phase 191 - guards a bookmarked/typed ?tab= deep-link into a DevOps-
+  // only category for an Admin (employee_admin) identity. The backend
+  // already 403s that data regardless, this just stops the dashboard from
+  // rendering tab buttons for a category this role can't actually see.
+  useEffect(() => {
+    if (!identity || identity.role === "admin") {
+      return;
+    }
+    if (DEVOPS_ONLY_CATEGORIES.includes(activeCategory)) {
+      setActiveCategory("admin");
+      setActiveTab(CATEGORY_TABS.admin[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity]);
+
+  async function handleSelectSnapshot(value: string) {
+    if (value === "live") {
+      setSelectedSnapshotId("live");
+      return;
+    }
+    const snapshotId = Number(value);
+    setSelectedSnapshotId(snapshotId);
+    setPipelineError(null);
+    try {
+      const result = await getPipelineSnapshot(currentIdentity, snapshotId);
+      setPipelineStatus(result);
+    } catch (err) {
+      setPipelineError(err instanceof ApiRequestError ? err.message : "Could not load this snapshot.");
+    }
+  }
+
   async function handleOpenDoc(docId: number) {
     setOpeningDocId(docId);
     setError(null);
@@ -364,20 +502,20 @@ export default function AdminDashboardPage() {
     "interview-qa": interviewQaCards.length,
   };
 
-  // Employee Admin gets every tab except Architecture Docs/Golden Dataset/
-  // Eval Runs (all part of the Deployment Dashboard) - Engineering Admin
-  // ("admin") only, same split the backend's own routes enforce.
-  const ENGINEERING_ADMIN_ONLY_TABS: AdminTab[] = [
-    "docs",
-    "golden-dataset",
-    "eval-runs",
-    "ci-status",
-    "live-metrics",
-    "interview-qa",
-  ];
-  const visibleTabs = (Object.keys(TAB_LABELS) as AdminTab[]).filter(
-    (tab) => !ENGINEERING_ADMIN_ONLY_TABS.includes(tab) || currentIdentity.role === "admin",
+  // Admin (employee_admin) gets the Admin/HR Ops categories only - Build &
+  // Deployment and Interview Q&A are DevOps ("admin") only, same split the
+  // backend's own routes enforce. Display labels only - role values
+  // unchanged. Gating is per category now (Phase 191), not per tab.
+  const visibleCategories = CATEGORY_ORDER.filter(
+    (category) => !DEVOPS_ONLY_CATEGORIES.includes(category) || currentIdentity.role === "admin",
   );
+  const visibleTabs = CATEGORY_TABS[activeCategory];
+
+  function handleSelectCategory(category: AdminCategory) {
+    setActiveCategory(category);
+    setActiveTab(CATEGORY_TABS[category][0]);
+    setSearchQuery("");
+  }
 
   // Milestone 1 - plain case-insensitive substring match across each tab's
   // own visible columns. Small lists (tens of rows), so a fresh .filter()
@@ -470,7 +608,20 @@ export default function AdminDashboardPage() {
         </p>
         <p className="dev-note">Click a row to view full detail, or check rows for bulk delete. Deletes are permanent.</p>
 
-        <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 12 }}>
+        <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 18 }}>
+          {visibleCategories.map((category) => (
+            <button
+              key={category}
+              type="button"
+              className={activeCategory === category ? undefined : "secondary"}
+              onClick={() => handleSelectCategory(category)}
+            >
+              {CATEGORY_LABELS[category]}
+            </button>
+          ))}
+        </div>
+
+        <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 20 }}>
           {visibleTabs.map((tab) => (
             <button
               key={tab}
@@ -486,6 +637,13 @@ export default function AdminDashboardPage() {
             </button>
           ))}
         </div>
+
+        {activeCategory === "interview-qa-ref" && (
+          <p className="dev-note-inline" style={{ marginBottom: 10 }}>
+            Legacy interview FAQ content (69 cards, pre-7-part-format) not yet migrated into the DB:{" "}
+            <Link to="/admin/open-doc?feature=interview-faqs&type=system">Interview FAQs - System Level</Link>
+          </p>
+        )}
 
         {showSharedSearchBar && (
           <input
@@ -852,9 +1010,46 @@ export default function AdminDashboardPage() {
 
         {!isLoading && activeTab === "ci-status" && ciStatus && (
           <>
-            <p className="dev-note-inline">
+            <p className="dev-note-inline" style={{ marginBottom: 16 }}>
               Deployment Dashboard, part 3 - a live read of this repo's own GitHub Actions runs. Read-only.
             </p>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                flexWrap: "wrap",
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
+              <h3 style={{ fontSize: 14, margin: 0 }}>Pipeline</h3>
+              <label style={{ fontSize: 12 }}>
+                Viewing:{" "}
+                <select value={String(selectedSnapshotId)} onChange={(e) => handleSelectSnapshot(e.target.value)}>
+                  <option value="live">Live (latest commit)</option>
+                  {pipelineSnapshots.map((snapshot) => (
+                    <option key={snapshot.id} value={snapshot.id}>
+                      {snapshot.head_sha.slice(0, 7)} - {new Date(snapshot.captured_at).toLocaleString()}
+                      {snapshot.head_commit_message ? ` - ${snapshot.head_commit_message.slice(0, 40)}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {selectedSnapshotId !== "live" && (
+              <p className="dev-note-inline" style={{ marginBottom: 16 }}>
+                Viewing a stored snapshot captured {pipelineSnapshots.find((s) => s.id === selectedSnapshotId)?.captured_at ? new Date(
+                  pipelineSnapshots.find((s) => s.id === selectedSnapshotId)!.captured_at,
+                ).toLocaleString() : ""} - not live, not polling.
+              </p>
+            )}
+            {pipelineError && <p className="error-banner">{pipelineError}</p>}
+            {!pipelineError && pipelineStatus && <PipelineStepper pipeline={pipelineStatus} />}
+            {!pipelineError && !pipelineStatus && <p className="dev-note-inline">Loading pipeline...</p>}
+
+            <h3 style={{ fontSize: 14, margin: "20px 0 8px" }}>Full run history</h3>
             {renderWorkflowStatus("ci.yml", ciStatus.ci)}
             {renderWorkflowStatus("deploy.yml", ciStatus.deploy)}
           </>

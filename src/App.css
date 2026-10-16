@@ -472,6 +472,18 @@ textarea:focus {
   text-decoration: none;
 }
 
+/* Phase 190/191 - "HR Operations" section label in the admin dropdown -
+   the DevOps-only category/sub-tab structure moved into AdminDashboardPage
+   itself (plain existing button styles there), not this dropdown. */
+.admin-menu-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 4px 10px 2px;
+}
+
 .message-list {
   flex: 1;
   overflow-y: auto;
@@ -1604,6 +1616,252 @@ textarea:focus {
 .status-badge.status-rejected {
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+/* Phase 188 - GitHub Actions' own status/conclusion vocabulary, reusing
+   the same tokens as the badges above (also fixes the existing CI/Build
+   Status tab's tables, which had no color for these values until now). */
+.status-badge.status-success {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.status-badge.status-in_progress,
+.status-badge.status-queued,
+.status-badge.status-waiting {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.status-badge.status-in_progress::after,
+.status-badge.status-queued::after,
+.status-badge.status-waiting::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+.status-badge.status-failure,
+.status-badge.status-cancelled,
+.status-badge.status-action_required {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.pipeline-run {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  background: var(--surface);
+}
+.pipeline-run-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.pipeline-run-title {
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pipeline-run-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* Phase 194 - each job (e.g. ci.yml's 3 separate jobs: security scan,
+   test suite, docker build) gets its own child card, nested inside the
+   parent run card - var(--bg), not var(--surface), so it reads as a
+   distinct nested layer against the parent .pipeline-run card's own
+   var(--surface) background. */
+.pipeline-job {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.pipeline-job:last-child {
+  margin-bottom: 0;
+}
+.pipeline-job-label {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pipeline-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+.pipeline-step {
+  /* flex-grow: 0, deliberately - flex-grow: 1 (the original value) made
+     any step left alone on the last wrapped row stretch to fill the
+     entire row width while steps sharing a row with others stayed
+     narrow, producing wildly inconsistent box sizes (e.g. "Complete job"
+     spanning full width). Fixed width, no stretching, text wraps inside
+     instead - uniform boxes regardless of row position. */
+  flex: 0 0 150px;
+  width: 150px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+.pipeline-step-arrow {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.pipeline-run-connector {
+  display: flex;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 16px;
+  margin: -4px 0;
+}
+
+/* Phase 193 - overall pipeline summary banner, aggregated across every
+   workflow run stitched into this commit's view. Same soft-bg/strong-
+   text pairing as the rest of this app's status badges, not a solid
+   saturated banner - keeps it consistent with the established palette. */
+.pipeline-banner {
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 20px;
+}
+.pipeline-banner.status-success {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-strong);
+}
+.pipeline-banner.status-failure {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+}
+.pipeline-banner.status-in_progress {
+  background: var(--info-soft);
+  border: 1px solid var(--info);
+}
+.pipeline-banner-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pipeline-banner-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.pipeline-banner-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Phase 196 - the condensed top summary bar (8 named stages). Connected
+   dots, not full step/job cards - a glance-level overview above the
+   detailed cards below, not a replacement for them. */
+.phase-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 4px 4px;
+  margin-bottom: 4px;
+}
+.phase-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 64px;
+}
+.phase-node-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+}
+.phase-node-dot.status-success {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.phase-node-dot.status-failure,
+.phase-node-dot.status-cancelled {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.phase-node-dot.status-in_progress {
+  background: var(--info);
+  border-color: var(--info);
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+.phase-node-dot.status-pending {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.phase-node-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.25;
+}
+.phase-bar-connector {
+  flex: 1 1 16px;
+  height: 2px;
+  background: var(--border);
+  margin-top: 8px;
+  min-width: 10px;
+}
+.pipeline-step.status-success {
+  background: var(--accent-soft);
+  border-color: var(--accent-strong);
+}
+.pipeline-step.status-failure,
+.pipeline-step.status-cancelled {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+.pipeline-step.status-in_progress {
+  background: var(--info-soft);
+  border-color: var(--info);
+}
+.pipeline-step.status-queued,
+.pipeline-step.status-waiting {
+  opacity: 0.65;
+}
+.pipeline-step-name {
+  font-weight: 600;
+}
+.pipeline-step-dur {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+.pipeline-step a {
+  font-size: 10.5px;
+  color: var(--info);
 }
 
 .dev-note-inline {

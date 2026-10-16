@@ -902,12 +902,11 @@ export default function ChatPage() {
                     the two admin tiers you are, instead of one generic
                     "Admin" label both shared - the menu contents below
                     differ by tier too (Architecture Docs/Golden Dataset
-                    shortcuts are Engineering-Admin-only). */}
-                {identity.role === "admin"
-                  ? "Engineering Admin ▾"
-                  : identity.role === "employee_admin"
-                    ? "Employee Admin ▾"
-                    : "Admin ▾"}
+                    shortcuts are DevOps-only). 2026-10-16 - renamed
+                    Engineering Admin -> DevOps, Employee Admin -> Admin
+                    (display label only - the underlying Role enum values
+                    "admin"/"employee_admin" are unchanged). */}
+                {identity.role === "admin" ? "DevOps ▾" : identity.role === "employee_admin" ? "Admin ▾" : "Admin ▾"}
               </button>
               {isAdminMenuOpen && (
                 <div className="admin-menu-dropdown">
@@ -921,6 +920,7 @@ export default function ChatPage() {
                       yet." wrapping badly in this dropdown's narrow width,
                       and the same link here was redundant with the one on
                       the page it leads to. */}
+                  <div className="admin-menu-section-label">HR Operations</div>
                   {(identity.role === "hr_support" || identity.role === "admin" || identity.role === "employee_admin") && (
                     <Link to="/upload" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
                       Upload documents
@@ -949,62 +949,15 @@ export default function ChatPage() {
                       Admin dashboard
                     </Link>
                   )}
-                  {/* 2026-10-15 - Engineering-Admin-exclusive shortcuts,
-                      straight to those two Dashboard tabs - Employee Admin
-                      never sees these, matching the backend's own
-                      ADMIN-only gate on /docs and /golden-dataset. */}
-                  {identity.role === "admin" && (
-                    <Link to="/admin?tab=docs" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
-                      Architecture docs
-                    </Link>
-                  )}
-                  {identity.role === "admin" && (
-                    <Link
-                      to="/admin?tab=golden-dataset"
-                      className="admin-menu-item"
-                      onClick={() => setIsAdminMenuOpen(false)}
-                    >
-                      Golden dataset
-                    </Link>
-                  )}
-                  {identity.role === "admin" && (
-                    <Link to="/admin?tab=eval-runs" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
-                      Eval runs
-                    </Link>
-                  )}
-                  {identity.role === "admin" && (
-                    <Link to="/admin?tab=ci-status" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
-                      CI/Build status
-                    </Link>
-                  )}
-                  {identity.role === "admin" && (
-                    <Link to="/admin?tab=live-metrics" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
-                      Live metrics
-                    </Link>
-                  )}
-                  {identity.role === "admin" && (
-                    <Link
-                      to="/admin/open-doc?feature=interview-faqs&type=system"
-                      className="admin-menu-item"
-                      onClick={() => setIsAdminMenuOpen(false)}
-                    >
-                      Interview FAQs - System Level
-                    </Link>
-                  )}
-                  {identity.role === "admin" && (
-                    <Link
-                      to="/admin/open-doc?feature=interview-faqs&type=agentic-research-systems"
-                      className="admin-menu-item"
-                      onClick={() => setIsAdminMenuOpen(false)}
-                    >
-                      Interview FAQs - Agentic Systems
-                    </Link>
-                  )}
-                  {identity.role === "admin" && (
-                    <Link to="/admin?tab=interview-qa" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
-                      Interview Q&A (DB)
-                    </Link>
-                  )}
+                  {/* Phase 191 - the DevOps-only deep-links that used to
+                      live here (Golden dataset/Eval runs/CI-CD Pipeline/
+                      Live metrics/Architecture docs/Interview FAQs/
+                      Interview Q&A) are gone - "Admin dashboard" above
+                      already opens on the right category/tab via its own
+                      ?tab= resolution, and the dashboard's own category +
+                      sub-tab bar replaces what this dropdown used to
+                      enumerate. Admin (employee_admin) never saw these
+                      anyway, matching the backend's own ADMIN-only gate. */}
                 </div>
               )}
             </div>

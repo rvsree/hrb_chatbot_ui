@@ -592,6 +592,7 @@ export interface EvalRunDetail extends EvalRunSummary {
 // Phase 183 - Deployment Dashboard's CI/Build Status tab.
 export interface WorkflowRunSummary {
   id: number;
+  run_number: number;
   status: string;
   conclusion: string | null;
   head_sha: string;
@@ -705,4 +706,59 @@ export interface InterviewQaCard extends InterviewQaCardFields {
 export interface InterviewQaListResponse {
   count: number;
   cards: InterviewQaCard[];
+}
+
+// Phase 188 - CI/CD Pipeline Visibility: one commit's full logical
+// pipeline, stitched together from however many GitHub Actions workflow
+// files actually ran for it, plus its nearest eval-gate result if any.
+export interface PipelineStepDetail {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface PipelineJobDetail {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  html_url: string;
+  steps: PipelineStepDetail[];
+}
+
+export interface PipelineWorkflowRun {
+  workflow_file: string;
+  id: number;
+  run_number: number;
+  status: string;
+  conclusion: string | null;
+  html_url: string;
+  created_at: string;
+  jobs: PipelineJobDetail[];
+}
+
+export interface PipelineStatusResponse {
+  head_sha: string;
+  head_commit_message: string;
+  head_branch: string;
+  event: string;
+  actor_login: string;
+  runs: PipelineWorkflowRun[];
+  eval_gate: EvalRunSummary | null;
+  error: string | null;
+}
+
+// Phase 189 - persisted pipeline snapshots (persist-on-read), for offline/
+// historical review past GitHub's own log retention window.
+export interface PipelineSnapshotSummary {
+  id: number;
+  head_sha: string;
+  head_commit_message: string;
+  captured_at: string;
+}
+
+export interface PipelineSnapshotListResponse {
+  count: number;
+  snapshots: PipelineSnapshotSummary[];
 }
