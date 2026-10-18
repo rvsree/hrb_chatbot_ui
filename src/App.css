@@ -1173,10 +1173,151 @@ textarea:focus {
   border-radius: 999px;
 }
 
+/* Explainability agent-model "?" icons - native title attribute tooltip,
+   no extra state. .info-icon-unimplemented marks a stub agent (e.g.
+   sql_db_agent) so it reads differently from a real, working one. */
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: none;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 10px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.info-icon-unimplemented {
+  background: var(--border);
+  color: var(--text-muted);
+}
+
+.info-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.info-icon-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-sunken);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  width: max-content;
+  max-width: 260px;
+  z-index: 20;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  text-align: left;
+  white-space: normal;
+}
+
+.info-icon-wrap:hover .info-icon-tooltip,
+.info-icon-wrap:focus-within .info-icon-tooltip {
+  display: block;
+}
+
+.agent-flow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-flow-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.agent-flow-arrow {
+  color: var(--text-muted);
+}
+
 .panel p,
 .panel ul,
 .panel ol {
   margin: 0;
+}
+
+/* Explainability-scoped redesign (user feedback: too many panel background
+   colors, inconsistent table sizing, modal resizing between tabs) - scoped
+   under .explainability-card so AdminConversationModal/LeaveReviewModal/
+   UnpaidLeaveModal/MyLeaveRequestsPage, which share the base .panel-info/
+   -success/-warning classes, are untouched. One neutral panel background
+   everywhere in this modal; color is reserved for a real verdict only (the
+   left border + eyebrow label), never a full background tint - the same
+   restrained convention an observability tool (LangSmith/Datadog-style)
+   uses: color marks status, not "this is a box of information". */
+.explainability-card .panel-info,
+.explainability-card .panel-success,
+.explainability-card .panel-warning {
+  background: var(--surface-sunken);
+}
+
+.explainability-card .panel-info {
+  border-left-color: var(--border-strong);
+}
+
+.explainability-card .panel-info .panel-eyebrow {
+  color: var(--text-muted);
+}
+
+/* min-height holds the tab content area steady across tabs of very
+   different lengths (Tech Stack vs. a single warning panel), same fix
+   already proven on Admin Dashboard's own tab-switch resizing. */
+.explainability-tab-panel {
+  min-height: 420px;
+}
+
+/* A real multi-column data table (Agent Flow, ReAct Flow, Engineering
+   Trace, Tech Stack) - distinct from .kb-chunk-grid, which is a fixed
+   140px label:value layout built for Citation's chunk detail, not a wide
+   table with several real columns. */
+.explainability-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.explainability-data-table th,
+.explainability-data-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.explainability-data-table thead th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.explainability-data-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .citation-list {

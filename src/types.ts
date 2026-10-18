@@ -42,8 +42,13 @@ export interface LatencyInfo {
 export interface EvalScores {
   groundedness: number;
   groundedness_verdict: "GROUNDED" | "PARTIAL" | "HALLUCINATED";
+  groundedness_explanation: string | null;
   completeness: number;
   completeness_verdict: "COMPLETE" | "PARTIAL" | "INCOMPLETE";
+  completeness_explanation: string | null;
+  retrieval_precision: number | null;
+  retrieval_relevant_chunk_indices: number[];
+  retrieval_precision_explanation: string | null;
 }
 
 export interface ChatHistoryMessage {
@@ -59,6 +64,7 @@ export interface McpToolCallDetail {
 
 export interface LlmContextTurn {
   label: string;
+  latency_ms: number | null;
   system_prompt: string | null;
   human_message: string | null;
   chat_history: ChatHistoryMessage[];
@@ -71,6 +77,7 @@ export interface LlmContextInfo {
 }
 
 export interface ExplainabilityInfo {
+  request_id: string;
   served_from_cache: boolean;
   llm_call_count: number;
   latency_ms: LatencyInfo;
@@ -241,11 +248,13 @@ export interface ToolCallInfo {
   tool_type: ToolType;
   latency_ms: number | null;
   success: boolean;
+  iteration: number | null;
 }
 
 export interface AgentTaskInfo {
   agent: string;
   focus: string;
+  reasoning: string;
 }
 
 export interface ChatMessage {

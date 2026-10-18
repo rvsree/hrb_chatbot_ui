@@ -192,8 +192,28 @@ export default function PipelineStepper({ pipeline }: PipelineStepperProps) {
 
   function findStepStatus(workflowFile: string, matchesName: (name: string) => boolean): NodeResult {
     const run = pipeline.runs.find((r) => r.workflow_file === workflowFile);
-    const step = run?.jobs.flatMap((job) => job.steps).find((s) => matchesName(s.name));
-    return step ? { status: step.status, conclusion: step.conclusion } : null;
+    for (const job of run?.jobs ?? []) {
+      const stepIndex = job.steps.findIndex((s) => matchesName(s.name));
+      if (stepIndex === -1) continue;
+      const step = job.steps[stepIndex];
+      // Steps within one real GitHub Actions job always execute strictly
+      // in order - if a step later in this same job's own list already
+      // reached a terminal state, this earlier one must have too,
+      // regardless of what its own status field says right now. This
+      // guards against GitHub's own Jobs API returning a momentarily
+      // inconsistent snapshot during a fast-moving live run (confirmed
+      // live, 2026-10-16 - "Deploy" showed green while "Docker Image", an
+      // earlier real step in that same job, still showed in_progress in
+      // the same single API response). Deliberately scoped to one job's
+      // own steps only - never applied across ci.yml's 4 parallel jobs,
+      // which have no such ordering guarantee between them.
+      const laterTerminalStep = job.steps.slice(stepIndex + 1).find((s) => s.status === "completed");
+      if (laterTerminalStep && step.status !== "completed") {
+        return { status: "completed", conclusion: step.conclusion ?? "success" };
+      }
+      return { status: step.status, conclusion: step.conclusion };
+    }
+    return null;
   }
 
   function combineResults(results: NodeResult[]): NodeResult {
