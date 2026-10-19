@@ -19,23 +19,56 @@ import ConversationSidebar from "../components/ConversationSidebar";
 import DocLink from "../components/DocLink";
 import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
+import HelpPopover from "../components/HelpPopover";
 import MessageBubble from "../components/MessageBubble";
 import UnpaidLeaveModal from "../components/UnpaidLeaveModal";
 import { useIdentity } from "../context/IdentityContext";
 import { loadConversations, saveConversations } from "../storage/conversationsStorage";
-import type { AdhocSessionSummary, ChatMessage, ChatMode, Conversation, FeedbackVote, SearchStrategy } from "../types";
+import type {
+  AdhocSessionSummary,
+  AgentSearchStrategy,
+  ChatMessage,
+  ChatMode,
+  Conversation,
+  FeedbackVote,
+  SearchStrategy,
+} from "../types";
 
+// 2026-10-18 - "genai-rag" display label renamed to "Reflex RAG" (user-
+// directed): this mode is a single retrieve-then-generate pass with no
+// agent loop or planning, matching the IK FDE course's "reflex agent"
+// concept (direct stimulus-response, no deliberation) better than its old
+// generic name. Internal value stays "genai-rag" unchanged, same as
+// "single-agentic-rag"/"multi-agentic-rag" already differ from their own
+// "Single-Agent RAG"/"Multi-Agent RAG" labels below - this project's
+// existing convention, not a new inconsistency. The backend API path
+// (/v1/genai-rag-retrieval/query) and the DocLink feature key
+// ("genai-rag-chat", synced server-side via scripts/sync_admin_docs.py)
+// are NOT renamed here - flagged separately, real compat/sync risk.
 const MODE_LABELS: Record<ChatMode, string> = {
-  "genai-rag": "GenAI RAG",
+  "genai-rag": "Reflex RAG",
   "single-agentic-rag": "Single-Agent RAG",
   "multi-agentic-rag": "Multi-Agent RAG",
 };
 
+// Phase 218 - "similarity"'s own label now names its real algorithm (it
+// always ran this way; just wasn't spelled out before) and "knn" is a new,
+// genuinely different, real option - not a decorative duplicate of it.
 const SEARCH_STRATEGY_LABELS: Record<SearchStrategy, string> = {
-  similarity: "Semantic Search",
-  mmr: "MMR",
+  similarity: "Semantic Search - ANN (Approximate Nearest Neighbor) via HNSW",
+  mmr: "MMR (Maximal Marginal Relevance)",
   keyword: "Keyword",
   hybrid: "Hybrid",
+  knn: "Exact KNN (K-Nearest Neighbors, brute-force)",
+};
+
+// Phase 228 - Single/Multi-Agent RAG only understand these 2 (their
+// shared tool, search_knowledge_base(), only ever resolves to one of
+// these 2 - see endpoint-request-response-contracts.md's Phase 228
+// entry) - a real subset, not every SEARCH_STRATEGY_LABELS option.
+const AGENT_SEARCH_STRATEGY_LABELS: Record<AgentSearchStrategy, string> = {
+  similarity: SEARCH_STRATEGY_LABELS.similarity,
+  mmr: SEARCH_STRATEGY_LABELS.mmr,
 };
 
 // Phase 175 - admin-only doc links. RAG Pipeline resolves to a different
@@ -50,19 +83,32 @@ const MODE_DOC_FEATURE: Record<ChatMode, string> = {
 const RETRIEVAL_DOC_FEATURE = "retrieval-strategies";
 
 // Phase 153 - concise, one entry per retrieval strategy, shown in the "?" popover below the dropdown.
+// Phase 218 - similarity/knn now also name which backends they actually
+// run against, after re-investigating a user-reported "is this real?"
+// question: both ChromaDB and Pinecone support both, with a real cost
+// difference (noted below), not a feature gap on either side.
 const SEARCH_STRATEGY_HELP: Record<SearchStrategy, string> = {
   similarity:
-    "Ranks chunks by meaning-based relevance to your question (vector similarity). Fast, and the default - best for most questions, but can return several chunks covering the same point if the knowledge base repeats it.",
-  mmr: "Also ranks by relevance, but actively avoids picking chunks too similar to ones already chosen - trades a little pure relevance for broader topic coverage. The Diversity (lambda) slider controls the balance: 1.0 = pure relevance, 0.0 = pure diversity.",
+    "Ranks chunks by meaning-based relevance to your question (vector similarity), via each backend's own approximate index (HNSW). Fast, and the default - best for most questions, but can return several chunks covering the same point if the knowledge base repeats it, and HNSW's approximation can occasionally miss the true closest match. Supported identically by ChromaDB and Pinecone - this is what both already run internally, always.",
+  mmr: "Also ranks by relevance (same HNSW-backed search as Semantic Search), but actively avoids picking chunks too similar to ones already chosen - trades a little pure relevance for broader topic coverage. The Diversity (lambda) slider controls the balance: 1.0 = pure relevance, 0.0 = pure diversity.",
   keyword:
     "Ranks by exact word/acronym overlap (BM25), not meaning. Best when your question uses specific terms, codes, or acronyms a meaning-based search might miss.",
   hybrid:
     "Combines Keyword and Semantic Search results into one ranked list. Usually the most robust choice - catches both exact-term and meaning-based matches - at the cost of running both searches.",
+  knn: "Computes real cosine similarity against every current chunk directly - no index, no approximation, so it can never miss a true closest match the way HNSW occasionally can. Slower: it's a full read of the knowledge base every query, not an indexed lookup. Supported by both ChromaDB and Pinecone, but the cost differs - ChromaDB reads its whole collection locally (fast); Pinecone has no bulk-export call, so this walks its whole index in paginated batches (noticeably slower on a large knowledge base, same cost profile Hybrid/Keyword search already accept on Pinecone today).",
 };
 
 const DEFAULT_LAMBDA_MULT = 0.5;
 
 const DEFAULT_TEMPERATURE = 0.0;
+
+// Phase 216 - mirror hrb_chatbot_v2's real .env values (RAG_DEFAULT_TOP_K,
+// OPENAI_CHAT_MODEL) exactly, not guessed - same convention as
+// DEFAULT_TEMPERATURE/ADHOC_MAX_FILES above. Will drift if that .env
+// changes and this isn't updated alongside it - no endpoint exposes these
+// today for the frontend to read live instead.
+const DEFAULT_TOP_K = 5;
+const DEFAULT_JUDGE_MODEL = "gpt-4.1-mini";
 
 // Phase 136 backend: MAX_FILES=3, ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES=10MB
 // (models/adhoc_chat.py) - mirrored here exactly, not guessed.
@@ -138,14 +184,34 @@ export default function ChatPage() {
   // Phase 141: a separate on/off switch for the ad-hoc document chat
   // feature itself, independent of which RAG Pipeline mode is selected -
   // the attach control only shows when this is checked AND GenAI RAG mode
-  // is active (both conditions, not one replacing the other).
-  const [adhocChatEnabled, setAdhocChatEnabled] = useState(true);
+  // is active (both conditions, not one replacing the other). 2026-10-18 -
+  // default flipped to off (was on) - user-directed.
+  const [adhocChatEnabled, setAdhocChatEnabled] = useState(false);
   const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE);
   const [searchStrategy, setSearchStrategy] = useState<SearchStrategy>("similarity");
   const [lambdaMult, setLambdaMult] = useState(DEFAULT_LAMBDA_MULT);
-  const [showRetrievalHelp, setShowRetrievalHelp] = useState(false);
-  const [showUnpaidLeaveHelp, setShowUnpaidLeaveHelp] = useState(false);
-  const [showAdhocChatHelp, setShowAdhocChatHelp] = useState(false);
+  // Phase 228 - separate state from searchStrategy above, deliberately:
+  // different value domain (2 options, not 5) and different request field
+  // (a per-mode default agentSearchStrategy, not genai-rag's own
+  // searchStrategy) - picking "hybrid" in Reflex RAG must never leak into
+  // what Single/Multi-Agent RAG send, and vice versa.
+  const [agentSearchStrategy, setAgentSearchStrategy] = useState<AgentSearchStrategy>("similarity");
+  // Phase 216 - Settings restructured into 3 tabs (RAG Search/RAG Config/
+  // Model), user-directed. Initial values mirror the backend's own real
+  // runtime defaults (RAG_DEFAULT_TOP_K/OPENAI_CHAT_MODEL in
+  // hrb_chatbot_v2's .env, same mirroring convention ADHOC_MAX_FILES
+  // above already uses) - not invented numbers. evalScoreThreshold has no
+  // real backend default to mirror: Phase 215 deliberately shipped it
+  // opt-in only (no threshold enforced unless the caller sets one), so it
+  // stays unset/off here too rather than inventing one.
+  const [settingsTab, setSettingsTab] = useState<"rag-search" | "rag-config" | "model">("rag-search");
+  const [topK, setTopK] = useState<number | undefined>(DEFAULT_TOP_K);
+  const [evalScoreThreshold, setEvalScoreThreshold] = useState<number | undefined>(undefined);
+  // Phase 226 - off by default, same reasoning as evalScoreThreshold above
+  // (opt-in only, no backend default to mirror) - also a no-op without a
+  // threshold set, enforced backend-side.
+  const [enableCorrectiveRetry, setEnableCorrectiveRetry] = useState(false);
+  const [llmJudgeModel, setLlmJudgeModel] = useState(DEFAULT_JUDGE_MODEL);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -168,8 +234,12 @@ export default function ChatPage() {
   const [adhocSessionId, setAdhocSessionId] = useState<string | null>(null);
   // Phase 162 - "Request Unpaid Leave": a checkbox that opens its own popup
   // and always reverts to unchecked, same as a trigger button styled as a
-  // checkbox - not a persistent toggle. Deliberately mode-independent and
-  // separate from the GenAI Chat Workflow's own attach-files popup above.
+  // checkbox - not a persistent toggle. Separate from the GenAI Chat
+  // Workflow's own attach-files popup above. 2026-10-19 - this comment
+  // used to say "deliberately mode-independent", which Phase 164 (below,
+  // at the render site) reversed to mode-gated - left stale here until
+  // now, corrected to point at the render site's own up-to-date history
+  // instead of repeating the now-false claim.
   const [showUnpaidLeaveModal, setShowUnpaidLeaveModal] = useState(false);
   const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -440,6 +510,19 @@ export default function ChatPage() {
       temperature,
       searchStrategy,
       lambdaMult: searchStrategy === "mmr" ? lambdaMult : undefined,
+      topK,
+      judgeModel: llmJudgeModel || undefined,
+      evalScoreThreshold,
+      enableCorrectiveRetry,
+    };
+    // Judge model / eval threshold apply uniformly across all 3 pipelines
+    // (Phase 215) - genai-rag gets them via genaiRagOptions above, the
+    // other 2 modes via this smaller, shared shape. Phase 228 -
+    // agentSearchStrategy likewise only means anything for these 2 modes.
+    const evalOptions = {
+      judgeModel: llmJudgeModel || undefined,
+      evalScoreThreshold,
+      agentSearchStrategy,
     };
 
     try {
@@ -493,10 +576,12 @@ export default function ChatPage() {
           explainability: response.explainability_info,
           retrievalInfo: response.retrieval_info,
           toolsUsed: response.tools_used,
+          evalScoreThreshold,
+          enableCorrectiveRetry,
         };
         returnedConversationId = response.conversation_id;
       } else if (mode === "single-agentic-rag") {
-        const response = await askAgenticQuery(currentIdentity, query, conversationIdSoFar);
+        const response = await askAgenticQuery(currentIdentity, query, conversationIdSoFar, evalOptions);
         assistantMessage = {
           id: makeId(),
           role: "assistant",
@@ -507,10 +592,11 @@ export default function ChatPage() {
           iterations: response.iterations,
           feedback: null,
           explainability: response.explainability_info,
+          evalScoreThreshold,
         };
         returnedConversationId = response.conversation_id;
       } else {
-        const response = await askMultiAgenticQuery(currentIdentity, query, conversationIdSoFar);
+        const response = await askMultiAgenticQuery(currentIdentity, query, conversationIdSoFar, evalOptions);
         assistantMessage = {
           id: makeId(),
           role: "assistant",
@@ -522,6 +608,7 @@ export default function ChatPage() {
           tasks: response.tasks,
           feedback: null,
           explainability: response.explainability_info,
+          evalScoreThreshold,
         };
         returnedConversationId = response.conversation_id;
       }
@@ -653,44 +740,300 @@ export default function ChatPage() {
         adhocSessions={adhocSessions}
         onSelectAdhocSession={handleSelectAdhocSession}
       >
-        <div className="tuning-bar">
-          <label htmlFor="mode-select">
-            <span className="tuning-label-row">
-              RAG Pipeline:
-              <DocLink featureName={MODE_DOC_FEATURE[effectiveMode]} />
-            </span>
-            <select
-              id="mode-select"
-              value={effectiveMode}
-              onChange={(event) => {
-                setSelectedMode(event.target.value as ChatMode);
-                // Phase 140: the attach control only shows in GenAI RAG mode
-                // (see composer below) - clear any already-attached files so
-                // they don't linger, hidden, attached to a mode that can't use them.
-                clearAdhocFiles();
-              }}
+        {/* Phase 216 - Settings reorganized into 3 tabs (user-directed):
+            RAG Search (pipeline mode + retrieval strategy), RAG Config
+            (temperature/top K/eval score threshold), Model (embedding
+            model + LLM judge model). Replaces the single flat "tuning-bar"
+            these used to share. */}
+        <div className="tuning-bar settings-tabs-bar">
+          <div className="settings-tab-row">
+            <button
+              type="button"
+              className={settingsTab === "rag-search" ? "settings-tab-active" : "settings-tab"}
+              onClick={() => setSettingsTab("rag-search")}
             >
-              {Object.entries(MODE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
+              RAG Search
+            </button>
+            <button
+              type="button"
+              className={settingsTab === "rag-config" ? "settings-tab-active" : "settings-tab"}
+              onClick={() => setSettingsTab("rag-config")}
+            >
+              RAG Config
+            </button>
+            <button
+              type="button"
+              className={settingsTab === "model" ? "settings-tab-active" : "settings-tab"}
+              onClick={() => setSettingsTab("model")}
+            >
+              Model
+            </button>
+          </div>
+
+          {settingsTab === "rag-search" && (
+            <div className="settings-tab-panel">
+              <label htmlFor="mode-select">
+                <span className="tuning-label-row">
+                  RAG Pipeline:
+                  <DocLink featureName={MODE_DOC_FEATURE[effectiveMode]} />
+                </span>
+                <select
+                  id="mode-select"
+                  value={effectiveMode}
+                  onChange={(event) => {
+                    setSelectedMode(event.target.value as ChatMode);
+                    // Phase 140: the attach control only shows in GenAI RAG mode
+                    // (see composer below) - clear any already-attached files so
+                    // they don't linger, hidden, attached to a mode that can't use them.
+                    clearAdhocFiles();
+                  }}
+                >
+                  {Object.entries(MODE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* 2026-10-19 (Phase 228) - Retrieval Strategy now shown for
+                  all 3 modes, user-directed. Reflex RAG gets the full
+                  5-option list (genai-rag's own `search_strategy` field);
+                  Single/Multi-Agent RAG get a real but NARROWER 2-option
+                  list bound to a separate state (agentSearchStrategy) and
+                  a different request field - their shared tool
+                  (search_knowledge_base()) only ever understands
+                  similarity/mmr, confirmed in code, not guessed - showing
+                  the other 3 there would silently no-op, the exact
+                  "decorative control" bug this project avoids elsewhere.
+                  Still hidden for the GenAI Chat Workflow's own attach-
+                  files path - that skips the vector store entirely, real
+                  search strategy to configure there at all. */}
+              {effectiveMode === "genai-rag" && !adhocChatEnabled && (
+                <>
+                  <label htmlFor="search-strategy-select">
+                    <span className="tuning-label-row">
+                      Retrieval Strategy:
+                      <DocLink featureName={RETRIEVAL_DOC_FEATURE} />
+                      <HelpPopover label="What do these retrieval strategies mean?">
+                        {Object.entries(SEARCH_STRATEGY_LABELS).map(([value, label]) => (
+                          <p key={value}>
+                            <strong>{label}:</strong> {SEARCH_STRATEGY_HELP[value as SearchStrategy]}
+                          </p>
+                        ))}
+                      </HelpPopover>
+                    </span>
+                    <select
+                      id="search-strategy-select"
+                      value={searchStrategy}
+                      onChange={(event) => setSearchStrategy(event.target.value as SearchStrategy)}
+                    >
+                      {Object.entries(SEARCH_STRATEGY_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {searchStrategy === "mmr" && (
+                    <label htmlFor="lambda-mult-input">
+                      Diversity (lambda):
+                      <input
+                        id="lambda-mult-input"
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.1}
+                        value={lambdaMult}
+                        onChange={(event) => setLambdaMult(Number(event.target.value))}
+                        title="1.0 = pure relevance, 0.0 = pure diversity"
+                      />
+                    </label>
+                  )}
+                </>
+              )}
+              {(effectiveMode === "single-agentic-rag" || effectiveMode === "multi-agentic-rag") && (
+                <label htmlFor="agent-search-strategy-select">
+                  <span className="tuning-label-row">
+                    Retrieval Strategy:
+                    <HelpPopover label="What does Retrieval Strategy do in this mode?">
+                      {effectiveMode === "single-agentic-rag" ? (
+                        <p>
+                          This is a DEFAULT, not a forced setting - the AI already chooses its own search method
+                          per search when it has a reason to (e.g. picking MMR for a broad question). This only
+                          applies when the AI doesn't make its own choice.
+                        </p>
+                      ) : (
+                        <p>
+                          Unlike Single-Agent RAG, there's no AI choice involved here - this mode always uses
+                          whatever you pick here, every time it searches.
+                        </p>
+                      )}
+                      {Object.entries(AGENT_SEARCH_STRATEGY_LABELS).map(([value, label]) => (
+                        <p key={value}>
+                          <strong>{label}:</strong> {SEARCH_STRATEGY_HELP[value as AgentSearchStrategy]}
+                        </p>
+                      ))}
+                    </HelpPopover>
+                  </span>
+                  <select
+                    id="agent-search-strategy-select"
+                    value={agentSearchStrategy}
+                    onChange={(event) => setAgentSearchStrategy(event.target.value as AgentSearchStrategy)}
+                  >
+                    {Object.entries(AGENT_SEARCH_STRATEGY_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {effectiveMode === "genai-rag" && adhocChatEnabled && (
+                <p className="dev-note-inline">
+                  No Retrieval Strategy setting here - the GenAI Chat Workflow answers only from the files you
+                  attach, not the knowledge base, so no search happens at all.
+                </p>
+              )}
+            </div>
+          )}
+
+          {settingsTab === "rag-config" && (
+            <div className="settings-tab-panel">
+              <label htmlFor="temperature-input">
+                Temperature:
+                <input
+                  id="temperature-input"
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  value={temperature}
+                  onChange={(event) => setTemperature(Number(event.target.value))}
+                />
+              </label>
+              <label htmlFor="top-k-input">
+                Top K:
+                <input
+                  id="top-k-input"
+                  type="number"
+                  min={1}
+                  max={20}
+                  step={1}
+                  placeholder="default"
+                  value={topK ?? ""}
+                  onChange={(event) => setTopK(event.target.value === "" ? undefined : Number(event.target.value))}
+                  title="How many chunks to retrieve. Leave blank to use the backend's own default."
+                />
+              </label>
+              <label htmlFor="eval-score-threshold-input">
+                Eval Score Threshold:
+                <input
+                  id="eval-score-threshold-input"
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  placeholder="off"
+                  value={evalScoreThreshold ?? ""}
+                  onChange={(event) =>
+                    setEvalScoreThreshold(event.target.value === "" ? undefined : Number(event.target.value))
+                  }
+                  title="Flags an answer whose groundedness/completeness/retrieval precision falls below this value. Leave blank to turn this check off."
+                />
+              </label>
+              {/* Phase 226 - genai-rag only, same reasoning as Retrieval
+                  Strategy above (AgenticRagRequest/MultiAgenticRagRequest
+                  have no search_options field at all to carry this on) -
+                  hidden rather than shown-but-inert for the other 2 modes. */}
+              {effectiveMode === "genai-rag" && (
+                <div className="checkbox-row-with-help">
+                  <label htmlFor="corrective-retry-checkbox" className="checkbox-label">
+                    <input
+                      id="corrective-retry-checkbox"
+                      type="checkbox"
+                      checked={enableCorrectiveRetry}
+                      onChange={(event) => setEnableCorrectiveRetry(event.target.checked)}
+                    />
+                    Retry Once on Low Retrieval Score
+                  </label>
+                  <HelpPopover label="What does Retry Once on Low Retrieval Score do?">
+                    <p>
+                      Requires Eval Score Threshold above to be set - without a threshold there's nothing to
+                      compare against, so this does nothing.
+                    </p>
+                    <p>
+                      When on: right after the system searches your documents, it quickly checks how good those
+                      results look. If they look weak (below your threshold), it searches again with a wider net
+                      (more chunks) ONE time before generating the answer - never more than once, to keep cost
+                      and wait time predictable.
+                    </p>
+                  </HelpPopover>
+                </div>
+              )}
+            </div>
+          )}
+
+          {settingsTab === "model" && (
+            <div className="settings-tab-panel">
+              {embeddingModel && (
+                <label>
+                  Embedding Model:
+                  <input type="text" value={embeddingModel} readOnly disabled />
+                </label>
+              )}
+              <label htmlFor="llm-judge-model-input">
+                LLM Judge Model:
+                <input
+                  id="llm-judge-model-input"
+                  type="text"
+                  placeholder="default"
+                  value={llmJudgeModel}
+                  onChange={(event) => setLlmJudgeModel(event.target.value)}
+                  title="Which model scores groundedness/completeness/retrieval precision. Leave blank to use the backend's own default judge model."
+                />
+              </label>
+            </div>
+          )}
         </div>
 
-        {/* Phase 164 - user-directed: gated to Multi-Agent RAG mode only
-            (reverses Phase 162's original "deliberately mode-independent"
-            choice). Round-2 follow-up: also gated to employee/manager only
-            - HR specialists get their own separate "Leave approvals" view
-            instead (Admin menu) and must never see or use this submission
-            entry point, confirmed live-tested as a real gap (an hr_support
-            persona could submit a request through here before this fix).
-            Still a separate entry point from the GenAI Chat Workflow's own
-            attach-files popup below - always unchecked at rest; checking
-            it just opens the popup. */}
-        {effectiveMode === "multi-agentic-rag" && currentIdentity.role !== "hr_support" && (
-          <div className="tuning-bar">
+        {/* 2026-10-18 - user-directed: moved below the RAG Pipeline
+            tab strip (was above it) - these are feature toggles, not RAG
+            config, so they read better after the pipeline/retrieval
+            settings than before them. Phase 164 - gated to Multi-Agent
+            RAG mode only (reverses Phase 162's original "deliberately
+            mode-independent" choice). Round-2 follow-up: also gated to
+            employee/manager only - HR specialists get their own separate
+            "Leave approvals" view instead (Admin menu) and must never see
+            or use this submission entry point, confirmed live-tested as a
+            real gap (an hr_support persona could submit a request through
+            here before this fix). Still a separate entry point from the
+            GenAI Chat Workflow's own attach-files popup below - always
+            unchecked at rest; checking it just opens the popup.
+            2026-10-18 - briefly widened to also show in GenAI RAG mode,
+            then reverted 2026-10-19 (user-directed, re-confirmed): Multi-
+            Agent RAG only - the widening is what the user was actually
+            asking about when they flagged this as confusing. */}
+        {/* 2026-10-19 - user-reported: Settings' overall height still
+            changed when switching RAG Pipeline, even after the panel
+            itself (above) got a fixed min-height - because THIS block,
+            unlike the panel, used to disappear from the DOM entirely for
+            every mode except Multi-Agent RAG, which the panel's own fix
+            never touched. Fixed by always rendering this wrapper (so it
+            always reserves the same row of vertical space) and only
+            conditionally rendering the checkbox INSIDE it - the same
+            "reserve the slot, don't remove it" fix as the panel's own
+            min-height, just applied to this separate element too.
+            2026-10-19 round 2 - user-reported: this block (and GenAI Chat
+            Workflow below it) rendered unconditionally regardless of
+            which Settings TAB was selected - visible on RAG Config and
+            Model too, not just RAG Search, where it topically belongs
+            (both are retrieval-related toggles). Scoped to the RAG
+            Search tab only, same as Retrieval Strategy/RAG Pipeline
+            above it. */}
+        {settingsTab === "rag-search" && (
+          <div className="tuning-bar unpaid-leave-slot">
+          {effectiveMode === "multi-agentic-rag" && currentIdentity.role !== "hr_support" && (
             <div className="checkbox-row-with-help">
               <label htmlFor="unpaid-leave-trigger-checkbox" className="checkbox-label">
                 <input
@@ -702,21 +1045,7 @@ export default function ChatPage() {
                 Request Unpaid Leave
               </label>
               <DocLink featureName="request-unpaid-leave" />
-              <button
-                type="button"
-                className="chunking-help-button"
-                aria-label="What is Request Unpaid Leave?"
-                title="What is Request Unpaid Leave?"
-                onClick={(event) => {
-                  event.preventDefault();
-                  setShowUnpaidLeaveHelp((current) => !current);
-                }}
-              >
-                ?
-              </button>
-            </div>
-            {showUnpaidLeaveHelp && (
-              <div className="chunking-help-popover">
+              <HelpPopover label="What is Request Unpaid Leave?">
                 <p>
                   Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability -
                   for example, extended medical leave or a personal emergency. Fill in the dates and purpose, and
@@ -729,11 +1058,9 @@ export default function ChatPage() {
                   its own. Once a specialist has reviewed it, you'll see the outcome (and get an email) - or check
                   "My requests" any time.
                 </p>
-              </div>
-            )}
-            <Link to="/my-leave-requests" className="link-button">
-              My requests
-            </Link>
+              </HelpPopover>
+            </div>
+          )}
           </div>
         )}
 
@@ -747,8 +1074,17 @@ export default function ChatPage() {
             disabling, no explanatory note. This was the user's original,
             repeated, and consistent request since Phase 141 - Phase 142
             wrongly reversed it instead of just dropping the note text. */}
-        {effectiveMode === "genai-rag" && (
-          <div className="tuning-bar">
+        {/* 2026-10-19 - same "reserve the slot, don't remove it" fix as
+            the Request Unpaid Leave block above - this checkbox also used
+            to vanish from the DOM entirely outside genai-rag mode,
+            another real contributor to Settings' overall height changing
+            on every RAG Pipeline switch. 2026-10-19 round 2 - also now
+            scoped to the RAG Search tab only, same reasoning as the
+            Request Unpaid Leave block above (was visible on every
+            Settings tab, not just the one it topically belongs to). */}
+        {settingsTab === "rag-search" && (
+          <div className="tuning-bar unpaid-leave-slot">
+          {effectiveMode === "genai-rag" && (
             <div className="checkbox-row-with-help">
               <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
                 <input
@@ -767,21 +1103,7 @@ export default function ChatPage() {
                 Enable GenAI Chat Workflow (attach files to ask about directly)
               </label>
               <DocLink featureName="genai-chat-workflow" />
-              <button
-                type="button"
-                className="chunking-help-button"
-                aria-label="What is the GenAI Chat Workflow?"
-                title="What is the GenAI Chat Workflow?"
-                onClick={(event) => {
-                  event.preventDefault();
-                  setShowAdhocChatHelp((current) => !current);
-                }}
-              >
-                ?
-              </button>
-            </div>
-            {showAdhocChatHelp && (
-              <div className="chunking-help-popover">
+              <HelpPopover label="What is the GenAI Chat Workflow?">
                 <p>
                   Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
                   about it directly, instead of searching the HR knowledge base. The answer is based only on
@@ -793,92 +1115,10 @@ export default function ChatPage() {
                   you ask, email the answer - and it remembers earlier turns in the same attached-file
                   conversation.
                 </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Phase 164 - user-directed: hidden specifically when the GenAI
-            Chat Workflow's attach-files feature is turned on (none of these
-            settings apply to that path - it never touches the vector
-            store). Scoped to the adhocChatEnabled checkbox, not RAG
-            Pipeline mode - Phase 144's own "render unconditionally in
-            every mode" decision above is about mode, untouched here. */}
-        {!(effectiveMode === "genai-rag" && adhocChatEnabled) && (
-        <div className="tuning-bar">
-          <label htmlFor="search-strategy-select">
-            <span className="tuning-label-row">
-              Retrieval:
-              <DocLink featureName={RETRIEVAL_DOC_FEATURE} />
-              <button
-                type="button"
-                className="chunking-help-button"
-                aria-label="What do these retrieval strategies mean?"
-                title="What do these retrieval strategies mean?"
-                onClick={(event) => {
-                  event.preventDefault();
-                  setShowRetrievalHelp((current) => !current);
-                }}
-              >
-                ?
-              </button>
-            </span>
-            <select
-              id="search-strategy-select"
-              value={searchStrategy}
-              onChange={(event) => setSearchStrategy(event.target.value as SearchStrategy)}
-            >
-              {Object.entries(SEARCH_STRATEGY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {showRetrievalHelp && (
-            <div className="chunking-help-popover">
-              {Object.entries(SEARCH_STRATEGY_LABELS).map(([value, label]) => (
-                <p key={value}>
-                  <strong>{label}:</strong> {SEARCH_STRATEGY_HELP[value as SearchStrategy]}
-                </p>
-              ))}
+              </HelpPopover>
             </div>
           )}
-          {searchStrategy === "mmr" && (
-            <label htmlFor="lambda-mult-input">
-              Diversity (lambda):
-              <input
-                id="lambda-mult-input"
-                type="number"
-                min={0}
-                max={1}
-                step={0.1}
-                value={lambdaMult}
-                onChange={(event) => setLambdaMult(Number(event.target.value))}
-                title="1.0 = pure relevance, 0.0 = pure diversity"
-              />
-            </label>
-          )}
-          <label htmlFor="temperature-input">
-            Temperature:
-            <input
-              id="temperature-input"
-              type="number"
-              min={0}
-              max={1}
-              step={0.1}
-              value={temperature}
-              onChange={(event) => setTemperature(Number(event.target.value))}
-            />
-          </label>
-          {embeddingModel && (
-            <label>
-              Embedding Model:
-              <input type="text" value={embeddingModel} readOnly disabled />
-            </label>
-          )}
-          <p className="dev-note-inline">Takes effect on your next message.</p>
-        </div>
+          </div>
         )}
       </ConversationSidebar>
 

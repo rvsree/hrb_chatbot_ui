@@ -1,12 +1,33 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { getDocument } from "../api/client";
 import { useIdentity } from "../context/IdentityContext";
-import type { ChatMessage, RetrievedChunk, ToolCallInfo } from "../types";
+import HelpPopover from "./HelpPopover";
+import type { ActivatedRailInfo, ChatMessage, RetrievedChunk, ToolCallInfo } from "../types";
 
 interface ExplainabilityModalProps {
   message: ChatMessage;
   originalQuery: string | null;
   onClose: () => void;
 }
+
+// Phase 216 - GET .../documents/{id} (used for per-source chunking
+// strategy) is gated to these 3 roles backend-side
+// (api/rag/ingest_document.py) - mirrored here so an employee/manager
+// never fires a call that would just 403.
+const PRIVILEGED_DOCUMENT_ROLES = new Set(["hr_support", "admin", "employee_admin"]);
+
+// Phase 218 - same expanded-acronym labels as ChatPage.tsx's own
+// SEARCH_STRATEGY_LABELS (not imported from there - that file has no
+// shared-constants module to import from yet, and this is plain display
+// text, not logic). Falls back to the raw value for any future
+// search_strategy this map doesn't know about yet.
+const SEARCH_STRATEGY_DISPLAY_LABELS: Record<string, string> = {
+  similarity: "Semantic Search - ANN (Approximate Nearest Neighbor) via HNSW",
+  mmr: "MMR (Maximal Marginal Relevance)",
+  keyword: "Keyword (BM25)",
+  hybrid: "Hybrid (Keyword + Semantic)",
+  knn: "Exact KNN (K-Nearest Neighbors, brute-force)",
+};
 
 // Labels for the known tool_type values; anything else (a future source
 // type the backend starts sending) falls back to "Other" rather than
@@ -35,6 +56,194 @@ const TOOL_TYPE_DESCRIPTIONS: Record<string, string> = {
   other: "A tool call that doesn't fall into one of the other known categories.",
 };
 
+// Retrieval metric tuning guidance - grounded in this project's own real,
+// tunable knobs (not generic RAG advice): chunking strategies
+// (ai/doc_processing/chunking/text_chunker.py), search strategies
+// (ai/rag_pipeline/query_retrieval/retriever.py), and the settings that
+// actually exist (RAG_DEFAULT_TOP_K, RAG_MIN_PINECONE_SCORE, etc.).
+// 2026-10-19 - tune went from one "·"-joined run-on sentence to a real
+// string[] (rendered as actual bullet points, not prose) - user-reported:
+// a wall of text makes the popover tall and hard to scan. 2026-10-19,
+// round 2 - rewritten in plain, beginner-friendly language (user-
+// reported: this is written for someone who already knows RAG, not for
+// a learner) - env var names, class names, and jargon ("harmonic mean",
+// "exact-KNN", "mathematically capped") replaced with plain explanations
+// of the same real, correct facts, pointing at Settings by its visible
+// label instead of its internal name.
+const RETRIEVAL_METRIC_GUIDANCE: Record<"precision" | "recall" | "f1", { what: string; why: string; tune: string[] }> = {
+  precision: {
+    what: "Out of the pieces of text (\"chunks\") pulled from your documents to answer this question, how many actually helped? A low score means some unrelated chunks got mixed in with the useful ones.",
+    why: "In the \"Golden dataset reference\" panel below, a low score like 0.200 is expected and not a problem: that test only counts 1 correct document per question, so the math can never score above 0.200 no matter how good retrieval is - Recall is the number that actually matters there. The LIVE score above (for this real question) has no such limit, so a low number there is worth a closer look.",
+    tune: [
+      "Lower \"Top K\" in Settings - pulls in fewer, more selective chunks",
+      "Raise the minimum match score so weak, barely-related matches get filtered out",
+      "Try the \"MMR\" retrieval strategy, which avoids pulling in repetitive/overlapping chunks",
+      "When documents are uploaded, use a smaller chunk size so each chunk stays focused on one topic instead of mixing in unrelated neighboring text.",
+    ],
+  },
+  recall: {
+    what: "Out of everything in your documents that could actually answer this question, how much did the system find? A low score means the right answer exists in the knowledge base but didn't come back in the search results.",
+    why: "In the offline test below, this is the number that has to pass (at least 0.6) before anything can be released. For a real live question (above), there's no way to know for sure what \"everything relevant\" is, so the number shown is an ESTIMATE based on checking a wider set of candidate chunks, not a guaranteed exact value - hover the live panel's own caption for the pool size it checked. Either way, a low recall usually means something upstream: the right document isn't indexed yet, got split awkwardly so part of the answer is missing, or just didn't rank high enough to make the cut.",
+    tune: [
+      "Raise \"Top K\" in Settings - pulls in more chunks, raising the odds the right one is included",
+      "Turn on \"Multi-Query\" - rephrases the question a few different ways before searching, which can catch a chunk the original wording missed",
+      "Try the \"Hybrid\" retrieval strategy, which also catches exact keyword matches a meaning-based search alone can miss",
+      "When documents are uploaded, chunk them so a complete answer stays together instead of getting split across chunk boundaries",
+      "Double check the document was actually re-processed after it was last changed.",
+    ],
+  },
+  f1: {
+    what: "One score that balances Precision and Recall together - it drops if EITHER one is weak, even when the other looks great.",
+    why: "In the offline test below, Precision is capped low by design (see Precision above), so F1 is capped along with it there too - check Recall first before worrying about a low offline F1. The live F1 (above) is calculated directly from the live Precision/Recall numbers next to it, so it carries the same \"estimate\" caveat Recall has.",
+    tune: [
+      "Usually this is about finding the right \"Top K\" balance, not one single fix - too low favors Precision over Recall, too high does the opposite.",
+      "Make sure the chunking approach matches the document's own structure (a table-heavy document needs different handling than plain paragraphs) before fine-tuning Top K further.",
+    ],
+  },
+};
+
+// Phase 223 - same spirit as RETRIEVAL_METRIC_GUIDANCE, for the other half
+// of eval scoring: is the ANSWER good, given whatever context it got.
+// Grounded in this project's own real knobs, not generic RAG advice.
+// 2026-10-19 - rewritten in plain, beginner-friendly language, same
+// reasoning as RETRIEVAL_METRIC_GUIDANCE above.
+const RESPONSE_METRIC_GUIDANCE: Record<"groundedness" | "completeness", { what: string; why: string; tune: string[] }> = {
+  groundedness: {
+    what: "Does the answer actually come from the documents it was given, or did the AI add something that isn't really in them (called a \"hallucination\")?",
+    why: "The AI is already told to only use the documents it was given and never invent information. So a low score here usually doesn't mean the instructions are wrong - it usually means the documents handed to it didn't clearly contain what it needed, so it filled the gap itself. Check the Retrieval Eval Score tab first.",
+    tune: [
+      "Check the Retrieval Eval Score tab first - weak retrieval is very often the real cause, not a prompt problem",
+      "Lower \"Temperature\" in Settings - makes answers more conservative and less likely to drift away from the given documents",
+      "A more focused chunking approach at upload time reduces confusing or incomplete context the AI has to guess around.",
+    ],
+  },
+  completeness: {
+    what: "Does the answer cover everything that was actually asked, not just the easiest part of the question?",
+    why: "A low score here usually means the question needed more information than what was actually retrieved - either because it was really two questions in one, or because the full answer was spread across more chunks/documents than the system pulled in.",
+    tune: [
+      "Raise \"Top K\" in Settings - brings in more context for the AI to work with",
+      "Turn on \"Multi-Query\" so the question gets rephrased a few different ways before searching, catching anything the original wording missed",
+      "Try the \"Hybrid\" or \"MMR\" retrieval strategy for broader coverage",
+      "If the question was really two questions in one, check the Engineering Trace tab to confirm it was actually split into separate sub-questions.",
+    ],
+  },
+};
+
+function ResponseMetricIcon({ metric, label }: { metric: keyof typeof RESPONSE_METRIC_GUIDANCE; label: string }) {
+  const guidance = RESPONSE_METRIC_GUIDANCE[metric];
+  return (
+    <InfoIcon
+      info={{
+        label,
+        description: (
+          <>
+            <HelpSection heading="What it means">{guidance.what}</HelpSection>
+            <HelpSection heading="Why it can look low">{guidance.why}</HelpSection>
+            <HelpSection heading="How to tune it" items={guidance.tune} />
+          </>
+        ),
+        implemented: true,
+      }}
+    />
+  );
+}
+
+// Phase 223 - a below-threshold metric gets an ACTIVE, visible
+// recommendation (not just a hover tooltip) - reuses the exact same
+// guidance text either metric-icon component already shows on hover, so
+// there's one source of truth for the tuning advice, just surfaced two ways.
+const BELOW_THRESHOLD_METRIC_LABELS: Record<string, string> = {
+  retrieval_precision: "Precision",
+  groundedness: "Groundedness",
+  completeness: "Completeness",
+};
+
+// 2026-10-19 - dynamic, not just a static copy of the hover-help text:
+// drops a suggestion that this specific answer's own real settings
+// already ruled out, instead of unconditionally repeating it every time.
+// Scoped to what's genuinely knowable from the response with no backend
+// change - search_strategy/sources.length/temperature are all real
+// fields already in ExplainabilityInfo/RetrievalInfo today, not new
+// plumbing. Each condition only ever REMOVES a now-irrelevant line, never
+// invents a new one and never edits the wording of one that stays - the
+// underlying guidance text is still the single source of truth.
+const PLATFORM_MAX_TOP_K = 20; // SearchOptions.top_k's own le=20 ceiling (models/rag.py)
+
+function dynamicTune(tune: string[], message: ChatMessage): string[] {
+  const searchStrategy = message.retrievalInfo?.search_strategy;
+  const sourceCount = message.sources?.length ?? 0;
+  const temperature = message.explainability?.temperature;
+
+  const filtered = tune.filter((item) => {
+    if (item.includes('"Hybrid"') && searchStrategy === "hybrid") return false;
+    if (item.includes('"MMR"') && searchStrategy === "mmr") return false;
+    if (item.includes('"Top K"') && item.toLowerCase().startsWith("raise") && sourceCount >= PLATFORM_MAX_TOP_K) {
+      return false;
+    }
+    if (item.includes('"Temperature"') && temperature !== null && temperature !== undefined && temperature <= 0.1) {
+      return false;
+    }
+    return true;
+  });
+  // Never show nothing - if every line happened to get filtered, the
+  // original (possibly-redundant) guidance is still better than a blank
+  // Recommendations panel for a flagged metric.
+  return filtered.length > 0 ? filtered : tune;
+}
+
+function BelowThresholdRecommendations({
+  belowThresholdMetrics,
+  threshold,
+  guidance,
+  message,
+}: {
+  belowThresholdMetrics: string[];
+  threshold: number | undefined;
+  guidance: Record<string, { what: string; tune: string[] }>;
+  message: ChatMessage;
+}) {
+  const flagged = belowThresholdMetrics.filter((metric) => metric in guidance);
+  if (flagged.length === 0) {
+    return null;
+  }
+  return (
+    <div className="panel panel-warning">
+      <span className="panel-eyebrow">
+        Recommendations{threshold !== undefined && ` - below your threshold of ${threshold.toFixed(2)}`}
+      </span>
+      {flagged.map((metric) => (
+        <div className="eval-score-group" key={metric}>
+          <span className="eval-score-group-label">{BELOW_THRESHOLD_METRIC_LABELS[metric] ?? metric}</span>
+          <ul className="citation-list">
+            {dynamicTune(guidance[metric].tune, message).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RetrievalMetricIcon({ metric, label }: { metric: keyof typeof RETRIEVAL_METRIC_GUIDANCE; label: string }) {
+  const guidance = RETRIEVAL_METRIC_GUIDANCE[metric];
+  return (
+    <InfoIcon
+      info={{
+        label,
+        description: (
+          <>
+            <HelpSection heading="What it means">{guidance.what}</HelpSection>
+            <HelpSection heading="Why it can look low">{guidance.why}</HelpSection>
+            <HelpSection heading="How to tune it" items={guidance.tune} />
+          </>
+        ),
+        implemented: true,
+      }}
+    />
+  );
+}
+
 // Agent model (user-requested, this conversation): the 3 workflow agents
 // every multi-agentic-rag query goes through, plus all 5 domain agents the
 // backend code actually defines - 2 of which (sql_db_agent/lms_analytics_agent)
@@ -43,8 +252,35 @@ const TOOL_TYPE_DESCRIPTIONS: Record<string, string> = {
 // project's existing "Dollar cost intentionally out of scope" notes.
 interface AgentInfo {
   label: string;
-  description: string;
+  // ReactNode, not just string - lets a call site pass structured,
+  // formatted sections (HelpSection below) instead of one run-on sentence.
+  description: ReactNode;
   implemented: boolean;
+}
+
+// A labeled sub-section inside a "?" popover - "What it means"/"Why it can
+// look low"/"How to tune it", real paragraph structure instead of one flat
+// concatenated string. Plain text still works fine as a bare description
+// (see AgentInfo.description above) - this is only for the handful of
+// call sites with genuinely multi-part guidance. `items` (2026-10-19,
+// user-reported) renders real bullet points instead of a "·"-joined
+// run-on sentence - a wall of prose made these popovers tall and hard to
+// scan; takes precedence over `children` when given.
+function HelpSection({ heading, children, items }: { heading?: string; children?: ReactNode; items?: string[] }) {
+  return (
+    <div className="help-popover-section">
+      {heading && <span className="help-popover-section-heading">{heading}</span>}
+      {items ? (
+        <ul className="citation-list">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>{children}</p>
+      )}
+    </div>
+  );
 }
 
 const WORKFLOW_AGENT_INFO: Record<"planner" | "orchestrator" | "reviewer", AgentInfo> = {
@@ -68,7 +304,7 @@ const WORKFLOW_AGENT_INFO: Record<"planner" | "orchestrator" | "reviewer", Agent
 const DOMAIN_AGENT_INFO: Record<string, AgentInfo> = {
   vector_kb_agent: {
     label: "KB Vector Agent",
-    description: "Searches the indexed HR benefits documents (401k, healthcare, tuition, leave policies) using vector similarity search - the same knowledge base genai-rag's own retrieval uses.",
+    description: "Searches the indexed HR benefits documents (401k, healthcare, tuition, leave policies) using vector similarity search - the same knowledge base Reflex RAG's own retrieval uses.",
     implemented: true,
   },
   lms_ops_agent: {
@@ -114,24 +350,26 @@ function toolCallsForIteration(message: ChatMessage, iteration: number) {
   return (message.toolsUsed ?? []).filter((call) => call.iteration === iteration);
 }
 
+// 2026-10-18 - thin wrapper over the app-wide HelpPopover (click-pinned,
+// explicit close, Copy button, portal-rendered) - kept as its own named
+// component so the ~16 call sites below didn't all need to change shape,
+// just this one definition.
 function InfoIcon({ info }: { info: AgentInfo }) {
   const suffix = info.implemented ? "" : " (not implemented yet)";
   return (
-    <span className="info-icon-wrap">
-      <button
-        type="button"
-        className={info.implemented ? "info-icon" : "info-icon info-icon-unimplemented"}
-        aria-label={`${info.label} - ${info.description}${suffix}`}
-      >
-        ?
-      </button>
-      <span className="info-icon-tooltip" role="tooltip">
-        <strong>{info.label}</strong>
-        <br />
-        {info.description}
-        {suffix}
-      </span>
-    </span>
+    <HelpPopover label={info.label} variant={info.implemented ? "default" : "muted"}>
+      {typeof info.description === "string" ? (
+        <p>
+          {info.description}
+          {suffix}
+        </p>
+      ) : (
+        <>
+          {info.description}
+          {suffix && <p>{suffix}</p>}
+        </>
+      )}
+    </HelpPopover>
   );
 }
 
@@ -197,9 +435,10 @@ const TECH_STACK_GROUPS: { label: string; items: TechStackItem[] }[] = [
 
 type ExplainabilityTab =
   | "metrics"
+  | "retrievalStrategy"
   | "agentFlow"
-  | "retrievalEval"
-  | "responseEval"
+  | "evalScore"
+  | "guardrails"
   | "engineeringTrace"
   | "llmContext"
   | "citations"
@@ -207,14 +446,166 @@ type ExplainabilityTab =
 
 const EXPLAINABILITY_TABS: { id: ExplainabilityTab; label: string }[] = [
   { id: "metrics", label: "Metrics" },
+  // 2026-10-18 - user-requested, its own tab rather than a line in Metrics
+  // since more retrieval/ingestion-config attributes (chunking strategy,
+  // top_k, etc.) are planned to join it.
+  { id: "retrievalStrategy", label: "Retrieval Strategy" },
   { id: "agentFlow", label: "Agent Flow" },
-  { id: "retrievalEval", label: "Retrieval Eval Score" },
-  { id: "responseEval", label: "Response Generation Eval Score" },
+  // 2026-10-19 - "Retrieval Eval Score"/"Response Generation Eval Score"
+  // merged into one parent tab with Retrieval Score/Response Generation
+  // Score as child sub-tabs (user-requested) - always one topic (how
+  // good is this answer) that only looked like 2 separate concerns.
+  { id: "evalScore", label: "Eval Score" },
+  // Phase 224 - real per-answer NeMo Guardrails (Input/Output) status, not
+  // a static description of what guardrails exist. 2026-10-19 round 2 -
+  // expanded from NeMo-only to all 6 of this project's own validation
+  // gates (user-requested, after confirming NeMo-only was the real but
+  // confusing original scope) - tab label kept as "Guardrails"
+  // (user-requested, round 3) even though the content now covers all 6
+  // gates, not just NeMo's.
+  { id: "guardrails", label: "Guardrails" },
   { id: "engineeringTrace", label: "Engineering Trace" },
   { id: "llmContext", label: "LLM Context" },
   { id: "citations", label: "Citations" },
   { id: "techStack", label: "Tech Stack" },
 ];
+
+// Phase 224 - real NeMo Guardrails rail names (nemoguardrails config under
+// ai/guardrails_config), not display guesses - mapped to a short, plain-
+// language explanation of what each one actually checks for. Phase 229 -
+// corrected to the REAL rail names, live-verified against the actual
+// config (3 real calls - pass/masked/blocked) rather than the plausible-
+// sounding but never-live-checked "pii detection" placeholder this used
+// before - the real masking rails are named "mask sensitive data on
+// input"/"...on output", confirmed in NeMo's own activated_rails log.
+const GUARDRAIL_RAIL_DESCRIPTIONS: Record<string, string> = {
+  "self check input": "Another AI reads your question first and checks whether it looks like an attempt to trick or misuse the system.",
+  "self check output": "Another AI reads the answer before it's sent back and checks whether it's safe to show you.",
+  "mask sensitive data on input": "Checks your question for personal information (like a social security number or email address) and masks it out.",
+  "mask sensitive data on output": "Checks the AI's answer for personal information (like a social security number or email address) and masks it out before it's shown.",
+};
+
+// Phase 229 - user-requested: what DATA each validation actually looks at
+// (your typed question vs. the AI's generated answer) and what kind of
+// problem it's checking for - real distinctions grounded in this
+// project's own config.yml (input rails run before retrieval ever
+// starts; output rails run on the generated answer before it's sent
+// back), not generic RAG security copy.
+const GUARDRAIL_RAIL_WHAT_IT_CHECKS: Record<string, string> = {
+  "self check input": "Your typed question - prompt injection / jailbreak attempts",
+  "mask sensitive data on input": "Your typed question - personal information (SSN, email, credit card, names)",
+  "self check output": "The AI's generated answer - unsafe or inappropriate content",
+  "mask sensitive data on output": "The AI's generated answer - personal information (SSN, email, credit card, names)",
+};
+
+function guardrailRailDescription(rail: string | null): string {
+  if (!rail) return "";
+  return GUARDRAIL_RAIL_DESCRIPTIONS[rail] ?? `A NeMo Guardrails rail named "${rail}".`;
+}
+
+// Phase 225 - groundedness_explanation/completeness_explanation already
+// carry the judge LLM's raw "Score: X\nReasoning: ..." response verbatim
+// (golden_dataset_harness.py's own `explanation: output`) - the raw 0-10
+// score and the score/10 normalization were already real data, just
+// buried inside a prose blob instead of shown as the calculation itself.
+function parseJudgeRawScore(explanation: string | null): string | null {
+  if (!explanation) return null;
+  const match = explanation.match(/Score:\s*([\d.]+)/);
+  if (!match) return null;
+  const raw = Number(match[1]);
+  if (Number.isNaN(raw)) return null;
+  return `${raw}/10 = ${(raw / 10).toFixed(2)}`;
+}
+
+type GuardrailGateId = "gate1" | "gate2" | "gate3" | "gate4" | "gate5" | "gate6";
+
+// 2026-10-19 round 2 - the Validation Gateway tab's own 6-gate selector,
+// matching docs/dev-reference/rag-pipeline-status.md's real gate names.
+const GUARDRAIL_GATES: { id: GuardrailGateId; label: string }[] = [
+  { id: "gate1", label: "Gate 1 · Input Firewall" },
+  { id: "gate2", label: "Gate 2 · Access Control" },
+  { id: "gate3", label: "Gate 3 · Retrieval Strategy" },
+  { id: "gate4", label: "Gate 4 · Context Grade" },
+  { id: "gate5", label: "Gate 5 · Grounding" },
+  { id: "gate6", label: "Gate 6 · Delivery" },
+];
+
+function guardrailStatusLabel(status: "pass" | "modified" | "blocked"): string {
+  if (status === "pass") return "Pass";
+  if (status === "modified") return "Modified";
+  return "Blocked";
+}
+
+function GuardrailCheckPanel({
+  title,
+  check,
+  blockedNote,
+}: {
+  title: string;
+  check: { status: "pass" | "modified" | "blocked"; rail: string | null; activated_rails: ActivatedRailInfo[] };
+  blockedNote?: string;
+}) {
+  return (
+    <div className={check.status === "pass" ? "panel panel-success" : "panel panel-warning"}>
+      <span className="panel-eyebrow">{title}</span>
+      <p className="eval-score-value">{guardrailStatusLabel(check.status)}</p>
+      {check.rail ? (
+        <p className="eval-score-caption">
+          Caught by: "{check.rail}" - {guardrailRailDescription(check.rail)}
+        </p>
+      ) : (
+        <p className="eval-score-caption">Nothing was flagged - the text passed every check unchanged.</p>
+      )}
+      {check.status === "blocked" && blockedNote && <p className="eval-score-caption">{blockedNote}</p>}
+      {/* Phase 229 - real evidence of which specific validations ran for
+          THIS answer, not just the aggregate verdict above - every
+          configured rail shows up here, including ones that found
+          nothing wrong, with NeMo's own real logged actions (not a
+          summary we wrote). Round 2 - each validation's name now has its
+          own "?" (user-requested), and the column header explains, once,
+          that the log column is verbatim system output, not a paraphrase
+          - keeps every row's own text short and simple. */}
+      {check.activated_rails.length > 0 && (
+        <>
+          <span className="eval-score-group-label">Validations that ran</span>
+          <table className="explainability-data-table">
+            <thead>
+              <tr>
+                <th>Validation</th>
+                <th>What's checked</th>
+                <th>
+                  What happened{" "}
+                  <HelpPopover label="What happened - column">
+                    <p>
+                      This is the system's own exact internal log of what this validation did, word for word - not
+                      a summary written for this screen. It's shown as real proof the check actually ran.
+                    </p>
+                  </HelpPopover>
+                </th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {check.activated_rails.map((rail) => (
+                <tr key={rail.name}>
+                  <td className="dev-note-inline">
+                    {rail.name}{" "}
+                    <HelpPopover label={rail.name}>
+                      <p>{GUARDRAIL_RAIL_DESCRIPTIONS[rail.name] ?? `A validation named "${rail.name}".`}</p>
+                    </HelpPopover>
+                  </td>
+                  <td className="dev-note-inline">{GUARDRAIL_RAIL_WHAT_IT_CHECKS[rail.name] ?? "-"}</td>
+                  <td className="dev-note-inline">{rail.decisions.join(" -> ") || "-"}</td>
+                  <td className="dev-note-inline">{rail.stop ? "Failed" : "Passed"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
 
 type PipelineMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
 
@@ -237,6 +628,22 @@ function promptConstantForTurn(label: string, mode: PipelineMode): string {
   if (mode === "genai-rag") return "RAG_PROMPT (or CONVERSATIONAL_FALLBACK_PROMPT if no chunks were retrieved)";
   return "unknown";
 }
+
+// Phase 222 - one real, verified sentence per prompt constant (read
+// directly from ai/prompts/agent_prompts.py and
+// ai/rag_pipeline/response_generation/response_generator.py, not
+// summarized from memory) - what that constant actually instructs the
+// model to do, shown alongside the real prompt text itself below.
+const PROMPT_CONSTANT_ROLES: Record<string, string> = {
+  PLANNER_SYSTEM_PROMPT:
+    "Breaks the question into one or more tasks, each assigned to a named domain agent (vector_kb_agent/lms_ops_agent/sql_db_agent/lms_analytics_agent/web_search_agent) - decides WHO should handle WHAT, not the answer itself.",
+  REVIEWER_SYSTEM_PROMPT:
+    "Merges every domain agent's raw result into one direct answer to the original question, deduplicating anything more than one agent covered.",
+  ORCHESTRATION_SYSTEM_PROMPT:
+    "Instructs the model to use its bound tools (SearchKnowledgeBase/GetLeaveBalance/GetLeaveHistory) rather than guess, then write the final answer in its own words - never paste a tool's raw output back verbatim.",
+  "RAG_PROMPT (or CONVERSATIONAL_FALLBACK_PROMPT if no chunks were retrieved)":
+    "A few-shot prompt with 2 worked examples baked in (direct fact lookup, eligibility/rule-based answer) - answer ONLY from the retrieved context, cite the source document by name after each fact, say \"I don't know\" rather than guess. Falls back to CONVERSATIONAL_FALLBACK_PROMPT (answer from prior conversation turns only) when retrieval found nothing this time.",
+};
 
 interface KnowledgeSourceEntry {
   name: string;
@@ -481,6 +888,47 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
   const [selectedChunkKey, setSelectedChunkKey] = useState<string | null>(null);
   const selectedChunk = sources.find((source) => chunkKey(source) === selectedChunkKey) ?? null;
   const [activeTab, setActiveTab] = useState<ExplainabilityTab>("metrics");
+  // Phase 229 round 2 - user-requested: Input/Output Check split into
+  // their own sub-tabs instead of always shown side by side, so each
+  // one's now-4-column validations table gets the full tab width
+  // instead of half of it.
+  const [guardrailsSubTab, setGuardrailsSubTab] = useState<GuardrailGateId>("gate1");
+  const [evalScoreSubTab, setEvalScoreSubTab] = useState<"retrieval" | "response">("retrieval");
+
+  // Phase 216 - chunking strategy is a per-document, ingestion-time setting
+  // (not captured anywhere in a query response), so it's fetched here from
+  // the existing GET .../documents/{id} endpoint instead of adding a new
+  // metadata-store lookup to the query pipeline. That endpoint is
+  // HR_SUPPORT/ADMIN/EMPLOYEE_ADMIN-only (api/rag/ingest_document.py), so
+  // it's only attempted for those roles - an employee/manager would just
+  // get a 403, not useful data.
+  const [chunkingStrategies, setChunkingStrategies] = useState<Record<string, string>>({});
+  const [chunkingFetchStarted, setChunkingFetchStarted] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== "retrievalStrategy" || chunkingFetchStarted) {
+      return;
+    }
+    if (!identity || !PRIVILEGED_DOCUMENT_ROLES.has(identity.role)) {
+      return;
+    }
+    const uniqueDocumentIds = Array.from(new Set((message.sources ?? []).map((source) => source.document_id)));
+    if (uniqueDocumentIds.length === 0) {
+      return;
+    }
+    setChunkingFetchStarted(true);
+    Promise.all(
+      uniqueDocumentIds.map(async (documentId) => {
+        try {
+          const document = await getDocument(identity, documentId);
+          return [documentId, document.chunk_info?.chunking_strategy ?? "n/a"] as const;
+        } catch {
+          return [documentId, "unavailable"] as const;
+        }
+      }),
+    ).then((results) => setChunkingStrategies(Object.fromEntries(results)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, identity, message.id, chunkingFetchStarted]);
 
   if (message.adhoc) {
     return <AdhocExplainability {...props} />;
@@ -576,12 +1024,199 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
             ) : (
               <div className="panel panel-warning">
                 <span className="panel-eyebrow">Latency &amp; Tokens</span>
-                <p>Not tracked for this pipeline mode yet (genai-rag only so far - see RAG-ROADMAP.md Phase 107).</p>
+                <p>Not tracked for this pipeline mode yet (Reflex RAG only so far - see RAG-ROADMAP.md Phase 107).</p>
               </div>
             )}
           </div>
           </div>
         )}
+
+        {activeTab === "retrievalStrategy" && (() => {
+          const mode = detectPipelineMode(message);
+          const searchToolCall = toolCallByName(message, "SearchKnowledgeBase");
+          // Phase 216 - 3 real answers, not one: genai-rag's own per-request
+          // choice, multi-agentic-rag's always-similarity KB Vector Agent
+          // (confirmed by reading vector_kb_agent.py - it never passes a
+          // strategy arg), single-agentic-rag's agent-chosen one (now
+          // captured in ToolCallInfo.search_strategy - was silently dropped
+          // before this phase).
+          const resolvedSearchStrategy = message.retrievalInfo
+            ? message.retrievalInfo.search_strategy
+            : mode === "multi-agentic-rag"
+              ? "similarity"
+              : searchToolCall
+                ? searchToolCall.search_strategy ?? "similarity"
+                : null;
+          const strategyNote = message.retrievalInfo
+            ? "Set from Settings' RAG Search tab for this query."
+            : mode === "multi-agentic-rag"
+              ? "Fixed - multi-agentic-rag's KB Vector Agent always searches by similarity; no agent-selectable strategy today."
+              : "Chosen by the agent itself per tool call (it can pick 'mmr' instead of the default 'similarity') - this is what it picked for this answer.";
+
+          return (
+            <div className="explainability-tab-panel">
+              {resolvedSearchStrategy ? (
+                <div className="panel panel-info">
+                  <span className="panel-eyebrow">
+                    Retrieval Strategy{" "}
+                    <InfoIcon info={{ label: "Retrieval strategy", description: strategyNote, implemented: true }} />
+                  </span>
+                  <table className="explainability-data-table">
+                    <tbody>
+                      <tr>
+                        <th>Search strategy</th>
+                        <td>{SEARCH_STRATEGY_DISPLAY_LABELS[resolvedSearchStrategy] ?? resolvedSearchStrategy}</td>
+                      </tr>
+                      {message.retrievalInfo && (
+                        <tr>
+                          <th>Vector DB</th>
+                          <td>{message.retrievalInfo.vector_db}</td>
+                        </tr>
+                      )}
+                      {message.retrievalInfo?.applied_filter && (
+                        <tr>
+                          <th>Self-Query filter</th>
+                          <td><pre className="llm-context-pre">{JSON.stringify(message.retrievalInfo.applied_filter, null, 2)}</pre></td>
+                        </tr>
+                      )}
+                      {!!message.retrievalInfo?.acl_denied_count && (
+                        <tr>
+                          <th>
+                            Access control{" "}
+                            <InfoIcon
+                              info={{
+                                label: "Document ACL",
+                                description:
+                                  "Documents can be restricted to specific roles or departments at upload time. " +
+                                  "This counts how many were excluded from this answer's search because this " +
+                                  "caller's role/department didn't qualify - not which documents, since showing " +
+                                  "that would itself reveal what's being hidden.",
+                                implemented: true,
+                              }}
+                            />
+                          </th>
+                          <td>
+                            {message.retrievalInfo.acl_denied_count} document
+                            {message.retrievalInfo.acl_denied_count === 1 ? "" : "s"} excluded by access-control rules
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="panel panel-warning">
+                  <p>
+                    No knowledge-base retrieval happened for this answer (routed to the Leave Management System or
+                    web search instead, or answered from conversation memory alone) - nothing to show here.
+                  </p>
+                </div>
+              )}
+
+              {resolvedSearchStrategy === "hybrid" && (() => {
+                const taggedSources = sources.filter((source) => source.matched_by && source.matched_by.length > 0);
+                const sparseOnly = taggedSources.filter((source) => source.matched_by!.length === 1 && source.matched_by![0] === "sparse").length;
+                const denseOnly = taggedSources.filter((source) => source.matched_by!.length === 1 && source.matched_by![0] === "dense").length;
+                const both = taggedSources.filter((source) => source.matched_by!.length === 2).length;
+                return (
+                  <div className="panel panel-info">
+                    <span className="panel-eyebrow">
+                      Dense/Sparse Contribution{" "}
+                      <InfoIcon
+                        info={{
+                          label: "Hybrid search: no tunable weight",
+                          description: (
+                            <>
+                              <HelpSection heading="How results are combined">
+                                Pure Reciprocal Rank Fusion (RRF): score = sum(1 / (60 + rank)) across every list a
+                                chunk appears in.
+                              </HelpSection>
+                              <HelpSection heading="Why there's no weight to show">
+                                There is no dense/sparse weight or alpha blend anywhere in it - both lists contribute
+                                identically by rank position, by design (RRF's own point is being scale-free, since
+                                BM25's unbounded score and cosine similarity's 0-1 range can't be compared directly
+                                without normalizing one against the other).
+                              </HelpSection>
+                              <HelpSection heading="What's shown instead">
+                                Which list(s) actually found each of this answer's chunks, in the table below.
+                              </HelpSection>
+                            </>
+                          ),
+                          implemented: true,
+                        }}
+                      />
+                    </span>
+                    {taggedSources.length > 0 ? (
+                      <>
+                        <table className="explainability-data-table">
+                          <tbody>
+                            <tr>
+                              <th>Sparse only (BM25 keyword)</th>
+                              <td className="eval-score-value">{sparseOnly}</td>
+                            </tr>
+                            <tr>
+                              <th>Dense only (vector similarity)</th>
+                              <td className="eval-score-value">{denseOnly}</td>
+                            </tr>
+                            <tr>
+                              <th>Both</th>
+                              <td className="eval-score-value">{both}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <p className="eval-score-caption">
+                          Of {taggedSources.length} chunk(s) in this answer. A chunk sparse found but dense missed (or
+                          vice versa) is a real signal: if that happens often, hybrid is earning its extra search cost
+                          over similarity alone - if "both" dominates every time, the two sides are mostly agreeing
+                          and keyword search may not be adding much for this kind of question.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="eval-score-caption">Not available for this answer (served from cache, most likely).</p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {sources.length > 0 && (
+                <div className="panel panel-info">
+                  <span className="panel-eyebrow">
+                    Chunking Strategy by Source Document{" "}
+                    <InfoIcon
+                      info={{
+                        label: "Chunking strategy",
+                        description:
+                          "Chosen per document at upload time (Document upload's own Chunking Strategy field), not " +
+                          "per query - today's query pipeline doesn't track it per chunk, so this is fetched live " +
+                          "from each source's own document record instead.",
+                        implemented: true,
+                      }}
+                    />
+                  </span>
+                  {identity && PRIVILEGED_DOCUMENT_ROLES.has(identity.role) ? (
+                    <table className="explainability-data-table">
+                      <tbody>
+                        {Array.from(new Set(sources.map((source) => source.document_id))).map((documentId) => {
+                          const filename = sources.find((source) => source.document_id === documentId)?.filename ?? documentId;
+                          return (
+                            <tr key={documentId}>
+                              <th>{filename}</th>
+                              <td>{chunkingStrategies[documentId] ?? "Loading..."}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="dev-note-inline">
+                      Visible to HR/Admin roles only (same access as Document Management) - not shown for your role.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {activeTab === "agentFlow" && (
           <div className="explainability-tab-panel">
@@ -639,10 +1274,9 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                           {call?.latency_ms !== null && call?.latency_ms !== undefined ? `${call.latency_ms.toFixed(0)}ms` : "n/a"}
                           {call && !call.success && <span className="knowledge-source-failed"> - failed</span>}
                         </td>
-                        <td className="dev-note-inline">
+                        <td>
                           {task.focus}
-                          <br />
-                          <em>Why: {task.reasoning}</em>
+                          <span className="agent-flow-reasoning">Why: {task.reasoning}</span>
                         </td>
                       </tr>
                     );
@@ -724,7 +1358,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           ) : (
             <div className="panel panel-warning">
               <p>
-                Not applicable for this pipeline mode - genai-rag is a single retrieve-then-generate call with no
+                Not applicable for this pipeline mode - Reflex RAG is a single retrieve-then-generate call with no
                 agent loop at all. See the Knowledge Sources panel on the Metrics tab instead.
               </p>
             </div>
@@ -732,49 +1366,166 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           </div>
         )}
 
-        {activeTab === "retrievalEval" && (
+        {activeTab === "evalScore" && (
           <div className="explainability-tab-panel">
+          {/* 2026-10-19 - user-requested: Retrieval Score/Response
+              Generation Score merged under one parent "Eval Score" tab,
+              same sub-tab pattern as Guardrails' own Input/Output split -
+              these 2 were always conceptually one topic (how good is
+              this answer) split across 2 top-level tab slots. */}
+          <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 12 }}>
+            <button
+              type="button"
+              className={evalScoreSubTab === "retrieval" ? undefined : "secondary"}
+              onClick={() => setEvalScoreSubTab("retrieval")}
+            >
+              Retrieval Score
+            </button>
+            <button
+              type="button"
+              className={evalScoreSubTab === "response" ? undefined : "secondary"}
+              onClick={() => setEvalScoreSubTab("response")}
+            >
+              Response Generation Score
+            </button>
+          </div>
+          {evalScoreSubTab === "retrieval" && (
+            <>
+          <p className="dev-note-inline">
+            These scores come from asking another AI to check the retrieval quality against a fixed set of 25
+            test questions with known-correct answers. Hover a metric's <strong>?</strong> to see what it measures,
+            why a low number isn't always a problem, and what Settings to adjust to improve it.
+          </p>
           <div className="panel panel-info">
-            <span className="panel-eyebrow">
-              Live precision for this answer{" "}
-              <InfoIcon
-                info={{
-                  label: "Live retrieval precision",
-                  description: "One LLM call sees every retrieved chunk at once and marks which ones actually help answer this question. precision = (chunks marked relevant) / (chunks retrieved). No live recall/F1 - that needs the total count of relevant documents that exist, which is unknowable outside the golden dataset.",
-                  implemented: true,
-                }}
-              />
-            </span>
+            <span className="panel-eyebrow">Live Precision/Recall/F1 for this answer</span>
             {message.explainability?.eval_scores?.retrieval_precision !== null &&
             message.explainability?.eval_scores?.retrieval_precision !== undefined ? (
               <>
-                <p>
-                  Precision: {message.explainability.eval_scores.retrieval_precision.toFixed(2)} - chunk(s){" "}
-                  {message.explainability.eval_scores.retrieval_relevant_chunk_indices.join(", ") || "none"} relevant
+                <table className="explainability-data-table">
+                  <tbody>
+                    <tr>
+                      <th>Precision <RetrievalMetricIcon metric="precision" label="Precision (live)" /></th>
+                      <td className="eval-score-value">{message.explainability.eval_scores.retrieval_precision.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <th>Recall (estimate) <RetrievalMetricIcon metric="recall" label="Recall (live, estimated)" /></th>
+                      <td className="eval-score-value">
+                        {message.explainability.eval_scores.retrieval_recall_estimate !== null
+                          ? message.explainability.eval_scores.retrieval_recall_estimate.toFixed(2)
+                          : "n/a"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>F1 (estimate) <RetrievalMetricIcon metric="f1" label="F1 (live, estimated)" /></th>
+                      <td className="eval-score-value">
+                        {message.explainability.eval_scores.retrieval_f1_estimate !== null
+                          ? message.explainability.eval_scores.retrieval_f1_estimate.toFixed(2)
+                          : "n/a"}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p className="eval-score-caption">
+                  Chunk(s) {message.explainability.eval_scores.retrieval_relevant_chunk_indices.join(", ") || "none"} judged relevant
                 </p>
+                {/* Phase 226 - only shown when it actually happened, not as a
+                    "false" line on every answer that never had the feature
+                    on in the first place. */}
+                {message.explainability.eval_scores.retrieval_retry_attempted && (
+                  <p className="eval-score-caption">
+                    Retried: the first search looked weak, so the system searched again with more candidates
+                    before generating this answer - the numbers above are from that second, retried search.
+                  </p>
+                )}
+                {/* Phase 225 - the real arithmetic behind the 3 numbers above,
+                    not just the final ratios - every value here is already
+                    in the response, just not shown as the calculation that
+                    produced it. */}
+                <div className="eval-score-group">
+                  <span className="eval-score-group-label">Calculation</span>
+                  <ul className="citation-list">
+                    <li>
+                      Precision = {message.explainability.eval_scores.retrieval_relevant_chunk_indices.length} relevant
+                      / {sources.length} retrieved = {message.explainability.eval_scores.retrieval_precision.toFixed(2)}
+                    </li>
+                    {message.explainability.eval_scores.retrieval_recall_estimate !== null &&
+                    message.explainability.eval_scores.retrieval_recall_relevant_count !== null ? (
+                      <li>
+                        Recall = {message.explainability.eval_scores.retrieval_relevant_chunk_indices.length} relevant
+                        (within the {sources.length} retrieved) /{" "}
+                        {message.explainability.eval_scores.retrieval_recall_relevant_count} relevant found anywhere in
+                        the {message.explainability.eval_scores.retrieval_recall_pool_size}-chunk pool ={" "}
+                        {message.explainability.eval_scores.retrieval_recall_estimate.toFixed(2)}
+                      </li>
+                    ) : (
+                      <li>Recall = n/a (nothing in the candidate pool was judged relevant, so there's no count to divide by)</li>
+                    )}
+                    {message.explainability.eval_scores.retrieval_f1_estimate !== null && (
+                      <li>
+                        F1 = 2 × ({message.explainability.eval_scores.retrieval_precision.toFixed(2)} ×{" "}
+                        {message.explainability.eval_scores.retrieval_recall_estimate?.toFixed(2)}) / (
+                        {message.explainability.eval_scores.retrieval_precision.toFixed(2)} +{" "}
+                        {message.explainability.eval_scores.retrieval_recall_estimate?.toFixed(2)}) ={" "}
+                        {message.explainability.eval_scores.retrieval_f1_estimate.toFixed(2)}
+                      </li>
+                    )}
+                  </ul>
+                </div>
+                {message.explainability.eval_scores.retrieval_recall_estimate !== null ? (
+                  <p className="eval-score-caption">
+                    Recall/F1 are estimated by checking a wider set of {message.explainability.eval_scores.retrieval_recall_pool_size} candidate
+                    chunks (the ones retrieved, plus some extra nearby ones) - hover <strong>?</strong> above for more detail.
+                  </p>
+                ) : (
+                  <p className="eval-score-caption">
+                    Recall/F1 show "n/a" here: out of the {message.explainability.eval_scores.retrieval_recall_pool_size ?? "?"}
+                    {" "}candidate chunks checked, none were found relevant - not even the one(s) retrieved for this answer -
+                    so there's nothing to calculate a ratio from. Hover <strong>?</strong> above for more detail.
+                  </p>
+                )}
                 {message.explainability.eval_scores.retrieval_precision_explanation && (
                   <pre className="llm-context-pre">{message.explainability.eval_scores.retrieval_precision_explanation}</pre>
                 )}
               </>
             ) : (
-              <p className="dev-note-inline">Not available (no retrieved context, or served from cache).</p>
+              <p className="eval-score-caption">Not available (no retrieved context, or served from cache).</p>
             )}
           </div>
+          <BelowThresholdRecommendations
+            belowThresholdMetrics={(message.explainability?.eval_scores?.below_threshold_metrics ?? []).filter(
+              (metric) => metric === "retrieval_precision",
+            )}
+            threshold={message.evalScoreThreshold}
+            guidance={{ retrieval_precision: RETRIEVAL_METRIC_GUIDANCE.precision }}
+            message={message}
+          />
           <div className="panel panel-info">
-            <span className="panel-eyebrow">Golden dataset reference (offline only)</span>
-            <ul className="citation-list">
-              <li>Precision@5: 0.200 &middot; Recall@5: 1.000 &middot; F1: 0.333 (25 cases, 2026-10-17)</li>
-            </ul>
-            <p className="dev-note-inline">
-              Precision is capped at 1/k by design (1 labeled document per case) - recall is what actually gates a
-              release (minimum 0.6). <code>scripts/run_release_gate.py</code>.
+            <span className="panel-eyebrow">Golden dataset reference (offline, 25 cases, 2026-10-17)</span>
+            <table className="explainability-data-table">
+              <tbody>
+                <tr>
+                  <th>Precision@5 <RetrievalMetricIcon metric="precision" label="Precision (offline)" /></th>
+                  <td className="eval-score-value">0.200</td>
+                </tr>
+                <tr>
+                  <th>Recall@5 <RetrievalMetricIcon metric="recall" label="Recall (offline)" /></th>
+                  <td className="eval-score-value">1.000</td>
+                </tr>
+                <tr>
+                  <th>F1 <RetrievalMetricIcon metric="f1" label="F1 (offline)" /></th>
+                  <td className="eval-score-value">0.333</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="eval-score-caption">
+              Precision is always low here by design (this test only counts 1 correct document per question) -
+              Recall is the number that actually has to pass (minimum 0.6) before a release is allowed.
             </p>
           </div>
-          </div>
-        )}
-
-        {activeTab === "responseEval" && (
-          <div className="explainability-tab-panel">
+            </>
+          )}
+          {evalScoreSubTab === "response" && (
+            <>
           {message.explainability?.eval_scores ? (
             <div
               className={
@@ -787,22 +1538,36 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
               <span className="panel-eyebrow">Response Generation Eval Score</span>
 
               <div className="eval-score-group">
-                <span className="eval-score-group-label">Groundedness</span>
-                <p>
+                <span className="eval-score-group-label">
+                  Groundedness <ResponseMetricIcon metric="groundedness" label="Groundedness" />
+                </span>
+                <p className="eval-score-value">
                   {message.explainability.eval_scores.groundedness.toFixed(2)} - {message.explainability.eval_scores.groundedness_verdict}
                 </p>
-                <p className="dev-note-inline">Is the answer supported by the retrieved context, or does it hallucinate?</p>
+                <p className="eval-score-caption">Does the answer actually come from the retrieved documents, or did it make something up?</p>
+                {parseJudgeRawScore(message.explainability.eval_scores.groundedness_explanation) && (
+                  <p className="eval-score-caption">
+                    How: the AI judge gave a raw score of {parseJudgeRawScore(message.explainability.eval_scores.groundedness_explanation)}
+                  </p>
+                )}
                 {message.explainability.eval_scores.groundedness_explanation && (
                   <pre className="llm-context-pre">{message.explainability.eval_scores.groundedness_explanation}</pre>
                 )}
               </div>
 
               <div className="eval-score-group">
-                <span className="eval-score-group-label">Completeness</span>
-                <p>
+                <span className="eval-score-group-label">
+                  Completeness <ResponseMetricIcon metric="completeness" label="Completeness" />
+                </span>
+                <p className="eval-score-value">
                   {message.explainability.eval_scores.completeness.toFixed(2)} - {message.explainability.eval_scores.completeness_verdict}
                 </p>
-                <p className="dev-note-inline">Does the answer fully address what was asked?</p>
+                <p className="eval-score-caption">Does the answer fully cover what was actually asked?</p>
+                {parseJudgeRawScore(message.explainability.eval_scores.completeness_explanation) && (
+                  <p className="eval-score-caption">
+                    How: the AI judge gave a raw score of {parseJudgeRawScore(message.explainability.eval_scores.completeness_explanation)}
+                  </p>
+                )}
                 {message.explainability.eval_scores.completeness_explanation && (
                   <pre className="llm-context-pre">{message.explainability.eval_scores.completeness_explanation}</pre>
                 )}
@@ -812,12 +1577,13 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                 <span className="eval-score-group-label">How this was calculated</span>
                 <ul className="citation-list">
                   <li>
-                    A judge LLM scores each dimension 0-10 (normalized above), given the question, answer, and
-                    context - its raw response is shown verbatim under each score.
+                    Another AI acts as a "judge": it's shown the question, the answer, and the documents used, and
+                    asked to score each one from 0-10. That raw score (shown above each metric) is then divided by
+                    10 to get the 0.00-1.00 number shown - its full written reasoning is shown below each score.
                   </li>
                   <li>
-                    Hand-rolled LLM-as-judge prompts (IK FDE Module 5 pattern), not DeepEval
-                    {message.explainability.latency_ms.eval !== null && ` - ${message.explainability.latency_ms.eval.toFixed(0)}ms`}.
+                    This is a custom judge built for this project, not an off-the-shelf library
+                    {message.explainability.latency_ms.eval !== null && ` - took ${message.explainability.latency_ms.eval.toFixed(0)}ms`}.
                   </li>
                 </ul>
               </div>
@@ -828,73 +1594,593 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
               <p>Not available for this message (no retrieved context to check groundedness against).</p>
             </div>
           )}
+          {message.explainability?.eval_scores && (
+            <BelowThresholdRecommendations
+              belowThresholdMetrics={(message.explainability.eval_scores.below_threshold_metrics ?? []).filter(
+                (metric) => metric === "groundedness" || metric === "completeness",
+              )}
+              threshold={message.evalScoreThreshold}
+              guidance={RESPONSE_METRIC_GUIDANCE}
+              message={message}
+            />
+          )}
+            </>
+          )}
           </div>
         )}
+
+        {activeTab === "guardrails" && (() => {
+          const mode = detectPipelineMode(message);
+          const searchStrategy =
+            message.retrievalInfo?.search_strategy ??
+            (mode === "multi-agentic-rag" ? "similarity" : toolCallByName(message, "SearchKnowledgeBase")?.search_strategy ?? null);
+          const selfQueryFilter = message.retrievalInfo?.applied_filter ?? null;
+          const evalScores = message.explainability?.eval_scores ?? null;
+
+          return (
+            <div className="explainability-tab-panel">
+              {/* 2026-10-19 round 2 - user-requested: expanded from NeMo-only
+                  (2 of the 6 gates) to all 6, after the narrower scope kept
+                  reading as "only 2 checks exist" rather than "only 2 are
+                  NeMo's". Gates 2/3/5 point at their own dedicated tab for
+                  full detail instead of duplicating it here. */}
+              <p className="dev-note-inline">
+                Real, per-answer status for each of this project's 6 validation gates - not a static list of what
+                exists.{" "}
+                <HelpPopover label="How to read this tab">
+                  <p>
+                    If a question gets fully blocked at Gate 1 or Gate 6 (it looks like an attempt to misuse the
+                    system), it never reaches this screen at all - the request stops right there with an error
+                    instead of an answer. That's why those two checks can only ever show "Pass" or "Modified" here,
+                    never "Blocked".
+                  </p>
+                  <p>
+                    Gates 2, 3, and 5 are built differently than Gates 1/6 (no NeMo Guardrails rail/activation log to
+                    show) - this tab gives each a real, honest status line, and points to its own tab (Retrieval
+                    Strategy, Eval Score) for the full detail already shown there, rather than repeating it.
+                  </p>
+                </HelpPopover>
+              </p>
+              <div
+                className="modal-actions"
+                style={{ flexWrap: "wrap", justifyContent: "flex-start", marginTop: 4, marginBottom: 12 }}
+              >
+                {GUARDRAIL_GATES.map((gate) => (
+                  <button
+                    key={gate.id}
+                    type="button"
+                    className={guardrailsSubTab === gate.id ? undefined : "secondary"}
+                    onClick={() => setGuardrailsSubTab(gate.id)}
+                  >
+                    {gate.label}
+                  </button>
+                ))}
+              </div>
+
+              {guardrailsSubTab === "gate1" &&
+                (message.explainability?.guardrails ? (
+                  <>
+                    <div className="panel panel-success" style={{ marginBottom: 12 }}>
+                      <span className="panel-eyebrow">
+                        Gate 1 - Input Firewall{" "}
+                        <InfoIcon
+                          info={{
+                            label: "Input Firewall",
+                            description:
+                              "The first stage every request passes through: is the request itself well-formed " +
+                              "(schema validation - field types, lengths, required fields), and does the question " +
+                              "look safe to act on (NeMo Guardrails' input check, below) before any retrieval or " +
+                              "generation ever starts.",
+                            implemented: true,
+                          }}
+                        />
+                      </span>
+                      <p className="eval-score-caption">
+                        Schema validation: Passed - a malformed request never reaches this screen at all (it's
+                        rejected before an answer is ever generated).
+                      </p>
+                    </div>
+                    <GuardrailCheckPanel title="Input Check (NeMo Guardrails)" check={message.explainability.guardrails.input} />
+                  </>
+                ) : (
+                  <div className="panel panel-warning">
+                    <span className="panel-eyebrow">Gate 1 - Input Firewall</span>
+                    <p>Not available for this message.</p>
+                  </div>
+                ))}
+
+              {guardrailsSubTab === "gate2" && (
+                <div className="panel panel-success">
+                  <span className="panel-eyebrow">
+                    Gate 2 - Access Control{" "}
+                    <InfoIcon
+                      info={{
+                        label: "Access control",
+                        description:
+                          "Three separate checks, each a plain pass/fail with no NeMo-style activation log: " +
+                          "which roles may call this endpoint at all, which specific documents a role/department " +
+                          "may see (Phase 231), and how many requests a caller can make per minute.",
+                        implemented: true,
+                      }}
+                    />
+                  </span>
+                  <table className="explainability-data-table">
+                    <tbody>
+                      <tr>
+                        <th>Role check</th>
+                        <td>
+                          Passed{identity ? ` - role "${identity.role}" is permitted for this endpoint` : ""} (a role
+                          not on the allowed list never reaches this screen at all).
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>
+                          Document ACL{" "}
+                          <InfoIcon
+                            info={{
+                              label: "Document ACL",
+                              description:
+                                "Documents can be restricted to specific roles or departments at upload time " +
+                                "(Phase 231). This counts how many were excluded from this answer's search - not " +
+                                "which documents, since showing that would itself reveal what's being hidden.",
+                              implemented: true,
+                            }}
+                          />
+                        </th>
+                        <td>
+                          {mode === "genai-rag" && message.retrievalInfo ? (
+                            message.retrievalInfo.acl_denied_count > 0 ? (
+                              `${message.retrievalInfo.acl_denied_count} document${message.retrievalInfo.acl_denied_count === 1 ? "" : "s"} excluded by access-control rules for this answer.`
+                            ) : (
+                              "No documents excluded - nothing restricted matched this request."
+                            )
+                          ) : (
+                            "Not shown for this pipeline yet - genai-rag only today (see RAG-ROADMAP.md Phase 232)."
+                          )}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>Rate limiting</th>
+                        <td>
+                          Passed (implicit - a rate-limited request never reaches this screen at all; no per-request
+                          usage count is returned in this response today).
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {guardrailsSubTab === "gate3" && (
+                <div className="panel panel-info">
+                  <span className="panel-eyebrow">
+                    Gate 3 - Retrieval Strategy{" "}
+                    <InfoIcon
+                      info={{
+                        label: "Retrieval Strategy",
+                        description:
+                          "How the question actually got turned into a document search: which search algorithm " +
+                          "ran (similarity/MMR/hybrid/etc.), and whether Self-Query parsed a metadata filter " +
+                          "(e.g. 'only policy documents') out of the question's own wording before searching.",
+                        implemented: true,
+                      }}
+                    />
+                  </span>
+                  <table className="explainability-data-table">
+                    <tbody>
+                      <tr>
+                        <th>Search strategy</th>
+                        <td>
+                          {searchStrategy
+                            ? SEARCH_STRATEGY_DISPLAY_LABELS[searchStrategy] ?? searchStrategy
+                            : "No knowledge-base retrieval happened for this answer."}
+                        </td>
+                      </tr>
+                      {selfQueryFilter && (
+                        <tr>
+                          <th>Self-Query filter</th>
+                          <td>
+                            <pre className="llm-context-pre">{JSON.stringify(selfQueryFilter, null, 2)}</pre>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <p className="eval-score-caption">
+                    Full detail (vector DB, dense/sparse contribution for hybrid search) is in the Retrieval Strategy
+                    tab.
+                  </p>
+                </div>
+              )}
+
+              {guardrailsSubTab === "gate4" &&
+                (() => {
+                  // 2026-10-19 round 3 - corrected: this was wrongly shown as
+                  // "not built" - Phase 226's corrective retry IS this gate's
+                  // real implementation (its own spec literally calls it "the
+                  // standard Corrective RAG (CRAG) shape"), just opt-in and
+                  // genai-rag only, which is why it read as missing before.
+                  const retryArmed = mode === "genai-rag" && message.enableCorrectiveRetry === true;
+                  const retryFired = evalScores?.retrieval_retry_attempted === true;
+                  return (
+                    <div className={retryFired ? "panel panel-success" : "panel panel-info"}>
+                      <span className="panel-eyebrow">
+                        Gate 4 - Context Grade{" "}
+                        <InfoIcon
+                          info={{
+                            label: "Context Grade",
+                            description:
+                              "Real, built as Phase 226's corrective retry - its own spec calls it \"the standard " +
+                              "Corrective RAG (CRAG) shape\", just narrower than a full per-chunk relevance grader: " +
+                              "it checks the RETRIEVED CHUNKS' own live precision once, and if it's below your Eval " +
+                              "Score Threshold, retries retrieval once with a wider candidate pool (doubled top_k, " +
+                              "capped at 20) before any answer is generated. Opt-in (Settings' RAG Config tab), " +
+                              "genai-rag only today.",
+                            implemented: true,
+                          }}
+                        />
+                      </span>
+                      {mode !== "genai-rag" ? (
+                        <p className="eval-score-caption">
+                          Not available for this pipeline today - the corrective retry below only exists in
+                          genai-rag.
+                        </p>
+                      ) : !retryArmed ? (
+                        <p className="eval-score-caption">
+                          Off for this request - no corrective retry ran. Turn on "Retry Once on Low Retrieval
+                          Score" in Settings' RAG Config tab to arm it (also needs an Eval Score Threshold set).
+                        </p>
+                      ) : retryFired ? (
+                        <p className="eval-score-caption">
+                          Fired for this answer - the first retrieval's precision was below your threshold
+                          {message.evalScoreThreshold !== undefined ? ` (${message.evalScoreThreshold})` : ""}, so
+                          retrieval ran a second time with a wider candidate pool before the answer was generated.
+                        </p>
+                      ) : (
+                        <p className="eval-score-caption">
+                          Armed{message.evalScoreThreshold !== undefined ? ` (threshold ${message.evalScoreThreshold})` : ""}
+                          {" "}but didn't need to fire - the first retrieval's precision already met the bar.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+              {guardrailsSubTab === "gate5" &&
+                (evalScores ? (
+                  <div className={evalScores.groundedness_verdict === "GROUNDED" ? "panel panel-success" : "panel panel-warning"}>
+                    <span className="panel-eyebrow">
+                      Gate 5 - Grounding{" "}
+                      <InfoIcon
+                        info={{
+                          label: "Grounding",
+                          description:
+                            "DeepEval's FaithfulnessMetric is this project's real Gate 5 tool, but it only runs " +
+                            "offline against the golden dataset (see the Eval Score tab's Retrieval Score sub-tab " +
+                            "for that). This live, per-answer number comes from a different, custom-built judge " +
+                            "that checks the same thing (is the answer actually grounded in what was retrieved) " +
+                            "for every real question, not just test-dataset ones.",
+                          implemented: true,
+                        }}
+                      />
+                    </span>
+                    <p className="eval-score-value">
+                      {evalScores.groundedness.toFixed(2)} - {evalScores.groundedness_verdict}
+                    </p>
+                    <p className="eval-score-caption">
+                      Does the answer actually come from the retrieved documents, or did it make something up? Full
+                      detail (the judge's full reasoning) is in the Eval Score tab.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="panel panel-warning">
+                    <span className="panel-eyebrow">Gate 5 - Grounding</span>
+                    <p>Not available for this message (no retrieved context to check groundedness against).</p>
+                  </div>
+                ))}
+
+              {guardrailsSubTab === "gate6" &&
+                (message.explainability?.guardrails ? (
+                  <>
+                    <GuardrailCheckPanel
+                      title="Output Check (NeMo Guardrails)"
+                      check={message.explainability.guardrails.output}
+                      blockedNote="The original answer was swapped out for a safe, generic message before being sent to you."
+                    />
+                    <div className="panel panel-success" style={{ marginTop: 12 }}>
+                      <span className="panel-eyebrow">
+                        Gate 6 - Delivery{" "}
+                        <InfoIcon
+                          info={{
+                            label: "Delivery",
+                            description:
+                              "The last stage: NeMo Guardrails' output check (above) runs on the generated answer " +
+                              "before it's sent back, then the response is built into its final shape and returned " +
+                              "- or, on an unexpected error anywhere in the pipeline, a consistent error shape is " +
+                              "returned instead of a raw crash.",
+                            implemented: true,
+                          }}
+                        />
+                      </span>
+                      <p className="eval-score-caption">Passed - a response was successfully built and returned.</p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="panel panel-warning">
+                    <span className="panel-eyebrow">Gate 6 - Delivery</span>
+                    <p>Not available for this message.</p>
+                  </div>
+                ))}
+            </div>
+          );
+        })()}
 
         {activeTab === "engineeringTrace" && (() => {
           const mode = detectPipelineMode(message);
           const turns = message.explainability?.llm_context?.turns ?? [];
           const sources = message.sources ?? [];
-          const distinctDocuments = new Set(sources.map((source) => source.filename));
+          const distinctDocuments = Array.from(new Set(sources.map((source) => source.filename)));
           const iterationCount = turns.filter((turn) => turn.label.startsWith("iteration ")).length;
+          // genai-rag labels a decomposed sub-question turn with the sub-
+          // question's own text (pipeline.py: turn["label"] = sub_question
+          // when len(sub_results) > 1) - real data, not synthesized here.
+          const subQuestionTurns = mode === "genai-rag" ? turns.filter((turn) => !turn.label.startsWith("Merging")) : [];
 
-          const loopEngineering =
-            mode === "multi-agentic-rag"
-              ? `No loop - one-shot parallel fan-out to ${message.tasks?.length ?? 0} agent(s), then a single Reviewer merge.`
-              : mode === "single-agentic-rag"
-                ? `Real ReAct loop - ${iterationCount} iteration(s) this call (max 5 by default). See the ReAct Flow tab for the per-iteration breakdown.`
-                : `No loop - a single retrieve-then-generate call${turns.length > 1 ? ` (${turns.length} decomposed sub-questions, each its own call)` : ""}.`;
+          // 2026-10-19 - sources[0].text is the raw ingested chunk (PDF
+          // bullet lists keep their own blank lines between items), and
+          // this preview renders inside a <pre> (preserves whitespace
+          // verbatim) - slicing the raw text could land right after one of
+          // those blank lines, showing dangling empty space before the
+          // truncation "..." (reported live, with a screenshot). Collapsing
+          // all whitespace runs to a single space first keeps this a clean
+          // one-line preview regardless of the source document's own
+          // formatting.
+          const previewText = (text: string, limit: number) => {
+            const collapsed = text.replace(/\s+/g, " ").trim();
+            return collapsed.length > limit ? `${collapsed.slice(0, limit)}...` : collapsed;
+          };
 
-          const harnessEngineering =
+          const contextExample =
             mode === "multi-agentic-rag"
-              ? "LangGraph StateGraph - 7 real nodes (planner, 5 domain agents, reviewer), parallel dispatch via LangGraph's own Send() API. ai/agents/workflow_agents/multi_agent_pipeline.py."
-              : mode === "single-agentic-rag"
-                ? "A plain Python for loop, not a graph framework - calls the LLM with bound tools each iteration until it stops calling them or hits max_iterations. ai/agents/workflow_agents/orchestration_agent.py."
-                : "A single direct function call - no loop, no graph framework. ai/rag_pipeline/pipeline.py.";
+              ? sources[0]
+                ? `[vector_kb_agent] ${previewText(sources[0].text, 80)}`
+                : "[agent_name] <that agent's result text>"
+              : sources[0]
+                ? `[${sources[0].filename}, chunk ${sources[0].chunk_index}]\n${previewText(sources[0].text, 80)}`
+                : "[filename, chunk N]\n<chunk text>";
 
           return (
             <div className="explainability-tab-panel">
               <p className="dev-note-inline">
                 A synthesis view, not a duplicate of LLM Context's raw prompt/response text - cross-references which
-                real backend code produced this answer.
+                real backend code produced this answer, with real examples from this specific one.
               </p>
               <div className="explainability-row">
                 <div className="panel panel-info">
-                  <span className="panel-eyebrow">Prompt Engineering</span>
+                  <span className="panel-eyebrow">
+                    Prompt Engineering{" "}
+                    <InfoIcon
+                      info={{
+                        label: "Prompt Engineering",
+                        description:
+                          "Which system prompt constant actually ran for each LLM call this answer made, and what " +
+                          "it instructs the model to do - expand a row below to read its real, exact text as sent, " +
+                          "not a paraphrase.",
+                        implemented: true,
+                      }}
+                    />
+                  </span>
                   {turns.length === 0 ? (
                     <p className="dev-note-inline">No LLM call captured for this answer.</p>
                   ) : (
-                    <table className="explainability-data-table">
-                      <tbody>
-                        {turns.map((turn, index) => (
-                          <tr key={`${turn.label}-${index}`}>
-                            <th>{turn.label}</th>
-                            <td className="dev-note-inline">{promptConstantForTurn(turn.label, mode)}</td>
+                    <>
+                      <table className="explainability-data-table">
+                        <thead>
+                          <tr>
+                            <th>Turn</th>
+                            <th>Prompt constant</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {turns.map((turn, index) => (
+                            <tr key={`${turn.label}-${index}`}>
+                              <td>{turn.label}</td>
+                              <td className="dev-note-inline">{promptConstantForTurn(turn.label, mode)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {/* 2026-10-19 - user-reported: the Role column used to
+                          repeat the SAME paragraph once per turn whenever
+                          consecutive turns shared one prompt constant (the
+                          common case - every sub-question in a decomposed
+                          query uses the identical RAG_PROMPT), which is
+                          what made this table so much taller than Context
+                          Engineering next to it. A role description is a
+                          property of the CONSTANT, not of each turn - moved
+                          out of the per-row table into this compact legend,
+                          shown once per distinct constant actually used
+                          (first-appearance order), not once per turn. */}
+                      <ul className="citation-list">
+                        {Array.from(new Set(turns.map((turn) => promptConstantForTurn(turn.label, mode)))).map(
+                          (constant) => (
+                            <li key={constant}>
+                              <strong>{constant}:</strong> {PROMPT_CONSTANT_ROLES[constant] ?? "-"}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                      {turns.map(
+                        (turn, index) =>
+                          turn.system_prompt && (
+                            <CollapsibleSection
+                              key={`prompt-text-${turn.label}-${index}`}
+                              nested
+                              defaultOpen={false}
+                              title={`"${turn.label}" - real system prompt text as sent`}
+                            >
+                              <pre className="llm-context-pre">{turn.system_prompt}</pre>
+                            </CollapsibleSection>
+                          ),
+                      )}
+                    </>
+                  )}
+                </div>
+                {/* 2026-10-19 - user-directed: Context/Loop/Harness
+                    Engineering grouped into one right-hand column next to
+                    Prompt Engineering, instead of 2 separate 1:1-paired
+                    rows - that old shape both stretched the much-shorter
+                    Context Engineering panel to match Prompt Engineering's
+                    own height (flex row default-stretch), and put Loop
+                    Engineering below Prompt Engineering rather than below
+                    Context Engineering where a top-to-bottom reader would
+                    expect it. */}
+                <div className="explainability-column">
+                <div className="panel panel-info">
+                  <span className="panel-eyebrow">
+                    Context Engineering{" "}
+                    <InfoIcon
+                      info={{
+                        label: "Context Engineering",
+                        description:
+                          "How retrieved information gets formatted into text before it reaches the LLM - the " +
+                          "literal string template, not just a chunk count.",
+                        implemented: true,
+                      }}
+                    />
+                  </span>
+                  <ul className="citation-list">
+                    <li>{sources.length} chunk(s) retrieved</li>
+                    <li>{distinctDocuments.length} distinct source document(s){distinctDocuments.length > 0 && `: ${distinctDocuments.join(", ")}`}</li>
+                    <li className="dev-note-inline">
+                      Assembled by {mode === "multi-agentic-rag" ? "build_context_from_agent_results()" : "build_context_from_chunks()"} -
+                      one block per {mode === "multi-agentic-rag" ? "domain agent result" : "chunk"}, joined with a blank line between blocks.
+                    </li>
+                  </ul>
+                  {sources.length > 0 && (
+                    <>
+                      <span className="eval-score-group-label">Real example (this answer's own first block)</span>
+                      <pre className="llm-context-pre">{contextExample}</pre>
+                    </>
                   )}
                 </div>
                 <div className="panel panel-info">
-                  <span className="panel-eyebrow">Context Engineering</span>
-                  <ul className="citation-list">
-                    <li>{sources.length} chunk(s) retrieved</li>
-                    <li>{distinctDocuments.size} distinct source document(s)</li>
-                    <li className="dev-note-inline">
-                      Assembled by {mode === "multi-agentic-rag" ? "build_context_from_agent_results()" : "build_context_from_chunks()"}
-                    </li>
-                  </ul>
+                  <span className="panel-eyebrow">
+                    Loop Engineering{" "}
+                    <InfoIcon
+                      info={{
+                        label: "Loop Engineering",
+                        description:
+                          "Whether this pipeline mode re-prompts itself based on its own prior output (a real " +
+                          "agentic loop) or runs once straight through - the IK FDE course's own reflex-vs-agentic " +
+                          "distinction, made concrete against this project's actual code.",
+                        implemented: true,
+                      }}
+                    />
+                  </span>
+                  {mode === "multi-agentic-rag" ? (
+                    <>
+                      <p className="dev-note-inline">
+                        No loop - one-shot parallel fan-out, every dispatched agent runs concurrently (LangGraph's
+                        Send() API), then a single Reviewer merge. No agent sees another's output or re-runs.
+                      </p>
+                      {message.tasks && message.tasks.length > 0 && (
+                        <ul className="citation-list">
+                          {message.tasks.map((task, index) => (
+                            <li key={`${task.agent}-${index}`}>
+                              <strong>{task.agent}</strong> - {task.focus}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : mode === "single-agentic-rag" ? (
+                    <>
+                      <p className="dev-note-inline">
+                        Real ReAct loop - {iterationCount} iteration(s) this call (max 5 by default; hitting the max
+                        returns a "wasn't able to finish reasoning" fallback answer, not a crash). Each iteration:
+                        the model sees every prior tool result, decides to call another tool or write a final answer.
+                      </p>
+                      {message.toolsUsed && message.toolsUsed.length > 0 && (
+                        <ul className="citation-list">
+                          {message.toolsUsed.map((call, index) => (
+                            <li key={`${call.tool_name}-${index}`}>
+                              Iteration {call.iteration ?? "?"}: called <strong>{call.tool_name}</strong>
+                              {call.search_strategy && ` (search_strategy=${call.search_strategy})`}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="dev-note-inline">See the Agent Flow tab for the full per-iteration prompt/response breakdown.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="dev-note-inline">
+                        No loop - a single retrieve-then-generate call per sub-question, never re-prompted with its
+                        own prior output.
+                        {subQuestionTurns.length > 1 && ` This question was decomposed into ${subQuestionTurns.length} sub-questions, each its own independent retrieve-then-generate call, merged by the Reviewer afterward.`}
+                      </p>
+                      {subQuestionTurns.length > 1 && (
+                        <ul className="citation-list">
+                          {subQuestionTurns.map((turn, index) => (
+                            <li key={`${turn.label}-${index}`}>{turn.label}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
                 </div>
-              </div>
-              <div className="explainability-row">
                 <div className="panel panel-info">
-                  <span className="panel-eyebrow">Loop Engineering</span>
-                  <p className="dev-note-inline">{loopEngineering}</p>
+                  <span className="panel-eyebrow">
+                    Harness Engineering{" "}
+                    <InfoIcon
+                      info={{
+                        label: "Harness Engineering",
+                        description:
+                          "The actual control-flow mechanism running this pipeline - a graph framework managing " +
+                          "state/parallelism, or plain Python - and why that choice fits this mode's own shape.",
+                        implemented: true,
+                      }}
+                    />
+                  </span>
+                  {mode === "multi-agentic-rag" ? (
+                    <>
+                      <p className="dev-note-inline">
+                        LangGraph <code>StateGraph</code> - 7 real nodes (planner, 5 domain agents, reviewer), parallel
+                        dispatch via LangGraph's own <code>Send()</code> API.
+                      </p>
+                      <p className="dev-note-inline">
+                        Why a graph framework here: the Planner's own output (which agents, how many) determines the
+                        fan-out shape at runtime - a plain Python loop can't express "run N things in parallel where N
+                        is decided mid-execution" as cleanly as LangGraph's Send() primitive does.
+                      </p>
+                      <p className="dev-note-inline">ai/agents/workflow_agents/multi_agent_pipeline.py.</p>
+                    </>
+                  ) : mode === "single-agentic-rag" ? (
+                    <>
+                      <p className="dev-note-inline">
+                        A plain Python <code>for</code> loop, not a graph framework - calls the LLM with bound tools
+                        each iteration until it stops calling them or hits max_iterations.
+                      </p>
+                      <p className="dev-note-inline">
+                        Why plain Python here: one agent, one sequential decision at a time (call a tool, or answer) -
+                        nothing to parallelize or branch on, so a graph framework's own bookkeeping would be overhead
+                        with no real benefit over a loop.
+                      </p>
+                      <p className="dev-note-inline">ai/agents/workflow_agents/orchestration_agent.py.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="dev-note-inline">A single direct function call - no loop, no graph framework.</p>
+                      <p className="dev-note-inline">
+                        Why no framework here: genai-rag is deliberately the simplest mode (the IK FDE course's own
+                        "reflex agent" shape) - retrieve once, generate once. Adding loop/graph machinery would add
+                        nothing since there's no multi-step decision to manage.
+                      </p>
+                      <p className="dev-note-inline">ai/rag_pipeline/pipeline.py.</p>
+                    </>
+                  )}
                 </div>
-                <div className="panel panel-info">
-                  <span className="panel-eyebrow">Harness Engineering</span>
-                  <p className="dev-note-inline">{harnessEngineering}</p>
                 </div>
               </div>
             </div>
@@ -1015,7 +2301,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           ) : (
             <div className="panel panel-warning">
               <p>
-                Not tracked for this pipeline mode yet (genai-rag only so far - see RAG-ROADMAP.md Phase 132), or
+                Not tracked for this pipeline mode yet (Reflex RAG only so far - see RAG-ROADMAP.md Phase 132), or
                 this answer was served from cache (nothing was actually sent this call).
               </p>
             </div>
@@ -1070,6 +2356,15 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
 
           <div className="panel panel-success">
             <span className="panel-eyebrow">Retrieved Chunks ({sources.length})</span>
+            {sources.length > 0 && (
+              <p className="dev-note-inline">
+                Listed #1 (best) downward, in the order retrieval actually ranked them - that ranking IS the score
+                shown per chunk (similarity/MMR for vector search, BM25 for keyword, Reciprocal Rank Fusion for
+                hybrid). There is no separate ranking step later: synthesis (the Reviewer agent on multi-agentic-rag,
+                or Reflex RAG's single generation call) takes these chunks as given and writes an answer from them -
+                it doesn't re-score or reorder them.
+              </p>
+            )}
             {sources.length > 0 ? (
               <ol className="kb-chunk-list">
                 {sources.map((source, index) => (

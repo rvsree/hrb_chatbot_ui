@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ApiRequestError, deleteDocumentById, getHealth, listDocuments, rechunkDocument, uploadDocuments } from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import DocLink from "../components/DocLink";
+import HelpPopover from "../components/HelpPopover";
 import { useIdentity } from "../context/IdentityContext";
 import type { DocumentRecord, Role } from "../types";
 import { formatElapsed, statusLabel } from "../utils/documentStatus";
@@ -142,8 +143,6 @@ export default function DocumentsPage() {
     chunkSize: number;
     chunkOverlap: number;
   } | null>(null);
-  const [showChunkingHelp, setShowChunkingHelp] = useState(false);
-  const [showChunkSizeHelp, setShowChunkSizeHelp] = useState(false);
   // Phase 142 - real bug: the periodic poll (every POLL_INTERVAL_MS) and the
   // explicit refresh() right after a rechunk completes could both be
   // in-flight at once; whichever HTTP response happened to arrive LAST won,
@@ -377,7 +376,6 @@ export default function DocumentsPage() {
       setSelectedStrategy((current) => ({ ...current, [confirmTarget.documentId]: "" }));
     }
     setConfirmTarget(null);
-    setShowChunkingHelp(false);
   }
 
   async function handleConfirmRechunk() {
@@ -386,7 +384,6 @@ export default function DocumentsPage() {
     }
     const { documentId, filename, chunkingStrategy, chunkSize, chunkOverlap } = confirmTarget;
     setConfirmTarget(null);
-    setShowChunkingHelp(false);
     setSelectedStrategy((current) => ({ ...current, [documentId]: chunkingStrategy }));
     setRechunkingId(documentId);
     setRowError(null);
@@ -449,18 +446,7 @@ export default function DocumentsPage() {
                 <th className="chunk-size-header">
                   <span className="chunk-size-header-row">
                     Chunk size / overlap
-                    <button
-                      type="button"
-                      className="chunking-help-button"
-                      aria-label="What does changing chunk size/overlap do?"
-                      title="What does changing chunk size/overlap do?"
-                      onClick={() => setShowChunkSizeHelp((current) => !current)}
-                    >
-                      ?
-                    </button>
-                  </span>
-                  {showChunkSizeHelp && (
-                    <div className="chunking-help-popover chunk-size-help-popover">
+                    <HelpPopover label="What does changing chunk size/overlap do?">
                       <p>
                         <strong>Chunk size</strong> is the target length (in characters) for each piece of the
                         document. Smaller chunks are more precise for narrow fact lookups, but can lose surrounding
@@ -474,8 +460,8 @@ export default function DocumentsPage() {
                         chunk size - too little risks losing a boundary fact, too much just duplicates content across
                         chunks.
                       </p>
-                    </div>
-                  )}
+                    </HelpPopover>
+                  </span>
                 </th>
                 <th>Embedding Model</th>
                 <th>Size</th>
@@ -567,15 +553,30 @@ export default function DocumentsPage() {
                       <div className="chunking-confirm-popover" role="dialog" aria-label="Apply Chunking Strategy">
                         <div className="chunking-confirm-header">
                           <strong>Apply Chunking Strategy</strong>
-                          <button
-                            type="button"
-                            className="chunking-help-button"
-                            aria-label="What does re-embedding mean?"
-                            title="What does re-embedding mean?"
-                            onClick={() => setShowChunkingHelp((current) => !current)}
-                          >
-                            ?
-                          </button>
+                          <HelpPopover label="What does re-embedding mean?">
+                            {(() => {
+                              const currentStrategy = doc.chunk_info?.chunking_strategy ?? "recursive";
+                              const newStrategy = confirmTarget.chunkingStrategy;
+                              const impact = STRATEGY_IMPACT[newStrategy] ?? STRATEGY_IMPACT.recursive;
+                              return (
+                                <>
+                                  <p>
+                                    <strong>Current: {strategyLabel(currentStrategy)}</strong>{" "}
+                                    {STRATEGY_DESCRIPTIONS[currentStrategy] ?? "—"}
+                                  </p>
+                                  <p>
+                                    <strong>New: {strategyLabel(newStrategy)}</strong> {STRATEGY_DESCRIPTIONS[newStrategy] ?? "—"}
+                                  </p>
+                                  <p>
+                                    <strong>Expected impact</strong> This document currently has {doc.chunk_count} chunks (
+                                    {strategyLabel(currentStrategy)}). {strategyLabel(newStrategy)} tends to produce{" "}
+                                    {impact.tendency} - {impact.retrieval}. This re-embeds (re-indexes) the whole document with the
+                                    new strategy.
+                                  </p>
+                                </>
+                              );
+                            })()}
+                          </HelpPopover>
                         </div>
                         <p>
                           Re-chunk "{confirmTarget.filename}" with strategy "{confirmTarget.chunkingStrategy}"? This re-embeds the
@@ -611,29 +612,6 @@ export default function DocumentsPage() {
                             />
                           </label>
                         </div>
-                        {showChunkingHelp &&
-                          (() => {
-                            const currentStrategy = doc.chunk_info?.chunking_strategy ?? "recursive";
-                            const newStrategy = confirmTarget.chunkingStrategy;
-                            const impact = STRATEGY_IMPACT[newStrategy] ?? STRATEGY_IMPACT.recursive;
-                            return (
-                              <div className="chunking-help-popover">
-                                <p>
-                                  <strong>Current: {strategyLabel(currentStrategy)}</strong>{" "}
-                                  {STRATEGY_DESCRIPTIONS[currentStrategy] ?? "—"}
-                                </p>
-                                <p>
-                                  <strong>New: {strategyLabel(newStrategy)}</strong> {STRATEGY_DESCRIPTIONS[newStrategy] ?? "—"}
-                                </p>
-                                <p>
-                                  <strong>Expected impact</strong> This document currently has {doc.chunk_count} chunks (
-                                  {strategyLabel(currentStrategy)}). {strategyLabel(newStrategy)} tends to produce{" "}
-                                  {impact.tendency} - {impact.retrieval}. This re-embeds (re-indexes) the whole document with the
-                                  new strategy.
-                                </p>
-                              </div>
-                            );
-                          })()}
                         <div className="chunking-confirm-actions">
                           <button type="button" className="secondary" onClick={handleCancelRechunk}>
                             Cancel

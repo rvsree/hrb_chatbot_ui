@@ -10,7 +10,9 @@
   --border: #e3e0d6;
   --border-strong: #cfcbbc;
   --text: #221f19;
-  --text-muted: #6e6b60;
+  /* 2026-10-18 - darkened from #6e6b60 (reported as "mild gray, not
+     readable" on white/light surfaces) for better contrast. */
+  --text-muted: #55523f;
 
   --accent: #2f6f4f;
   --accent-strong: #235639;
@@ -47,7 +49,9 @@
     --border: #38352b;
     --border-strong: #4a4738;
     --text: #f0efe6;
-    --text-muted: #a9a596;
+    /* 2026-10-18 - lightened from #a9a596 for better contrast on dark
+       surfaces (same "mild gray, not readable" report). */
+    --text-muted: #c2beae;
 
     --accent: #6cb68c;
     --accent-strong: #8ccba7;
@@ -80,7 +84,7 @@
   --border: #38352b;
   --border-strong: #4a4738;
   --text: #f0efe6;
-  --text-muted: #a9a596;
+  --text-muted: #c2beae;
 
   --accent: #6cb68c;
   --accent-strong: #8ccba7;
@@ -263,7 +267,9 @@ textarea:focus {
 }
 
 .sidebar {
-  width: 260px;
+  /* 2026-10-18 - widened from 260px so History and Settings controls
+     (mode/retrieval selects, the 3-tab Settings strip) aren't cramped. */
+  width: 320px;
   flex-shrink: 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -370,7 +376,10 @@ textarea:focus {
   box-shadow: none;
   padding: 9px 10px;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  /* Same 13px/system-ui stack as .message-text above - shared by both the
+     "AI RAG Chat History" and "GenAI Chat Workflow History" sections. */
   font-size: 13px;
+  font-family: inherit;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -579,6 +588,88 @@ textarea:focus {
   gap: 8px;
 }
 
+/* 2026-10-19 - the Request Unpaid Leave / Enable GenAI Chat Workflow
+   checkbox blocks each used to vanish from the DOM entirely outside
+   their one applicable mode, changing Settings' overall height on every
+   RAG Pipeline switch - the same "dead space when a control disappears"
+   problem .settings-tab-panel's own min-height fix already solved for
+   the panel above, just not for these two separate blocks below it.
+   Both now always render their .tuning-bar wrapper (with this class) and
+   only conditionally render the checkbox row inside it, so the row's own
+   height is always reserved - min-height sized to one checkbox-row-with-
+   help row (~15px help-popover-trigger + line height) plus .tuning-bar's
+   own 8px padding-top. */
+.unpaid-leave-slot {
+  min-height: 34px;
+}
+
+/* Phase 216 - Settings' own 3-tab strip (RAG Search/RAG Config/Model),
+   nested inside .tuning-bar so its labels/selects/inputs inherit that
+   scope's styling; only the tab row + panel spacing are new here. */
+.settings-tab-row {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.settings-tab,
+.settings-tab-active {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 4px;
+  /* 2026-10-18 - was var(--border) on both states, too subtle to tell the
+     3 tabs apart at rest; border-strong gives every tab a visible frame,
+     not just the active one. */
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.settings-tab-active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+.settings-tab-panel {
+  display: flex;
+  flex-direction: column;
+  /* 2026-10-19 round 3 - user-directed: fixed height again, PLUS more
+     line spacing this time. The first 2 attempts (180px top-aligned,
+     then 160px + justify-content: center) both failed because the
+     "extra" space beyond a shorter tab's real content pooled into one
+     visible empty block, read as "something's missing" either way.
+     Different mechanism this time: the gap below (up from 10px) is what
+     actually absorbs that extra space now, spread evenly BETWEEN every
+     real control instead of concentrated above/below them - directly
+     what "increase line spacing" asked for, not just a side effect.
+     Also more viable than before on its own merits: Phase 228 added
+     Retrieval Strategy to all 3 modes, so the tab's real field count is
+     now 2-3 almost everywhere (was 1-3 with much wider swings pre-228) -
+     a fixed height has far less sparse-content case to paper over now.
+     Round 4 - 220px was still reported as too generous (the common case
+     is 2 fields: Single/Multi-Agent RAG never get the Diversity(lambda)
+     field at all - Phase 228's own scoping). Tightened to 180px, then
+     130px - both still reported as leaving visible gap. Every pass so
+     far has been a CSS-value calculation, not a live-rendered
+     measurement (no browser tool available this session to check
+     against the real pixel result), so each guess has landed too high
+     in the same direction. Cut hard this round instead of nudging again
+     - 95px, near-zero buffer above the 2-field case's own estimated
+     content height, so this floor should now sit almost exactly at
+     natural content height for the common case rather than padding it.
+     If still visibly off after this, the floor isn't the right lever
+     to keep tuning blind - either drop the fixed-height requirement
+     (natural per-tab height never drew a complaint on its own) or get
+     an exact pixel number (e.g. via DevTools) instead of another guess. */
+  min-height: 95px;
+  gap: 20px;
+}
+
 .message {
   max-width: 88%;
   padding: 12px 16px;
@@ -628,15 +719,34 @@ textarea:focus {
   color: var(--accent-contrast);
 }
 
+/* 2026-10-18 - .message-actions (new on user bubbles too, for the Copy
+   button) inherits .link-button's --text-muted color by default, which
+   has poor contrast against the user bubble's own --accent background -
+   same reasoning .message-user .message-table th already gets its own
+   override for. */
+.message-user .link-button {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.message-user .link-button:hover:not(:disabled) {
+  color: var(--accent-contrast);
+}
+
 .message-time {
   font-size: 11px;
   opacity: 0.65;
 }
 
+/* Phase 216 - standardized to the same 13px/system-ui stack the sidebar's
+   conversation-item rows already use (.conversation-item below) - this was
+   previously unset, so it fell back to the 16px browser default and read
+   as a different, bigger size than its own citations/table underneath it. */
 .message-text {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.5;
+  font-size: 13px;
+  font-family: inherit;
 }
 
 .message-typing {
@@ -751,6 +861,14 @@ textarea:focus {
 .link-button.active {
   color: var(--accent);
   font-weight: 700;
+}
+
+/* 2026-10-19 - an icon-only .link-button (e.g. the message Copy button) -
+   the base class's underline is meant for text links, wrong under a bare
+   icon. */
+.link-button.icon-button {
+  text-decoration: none;
+  padding: 2px;
 }
 
 .thumb-row {
@@ -956,8 +1074,41 @@ textarea:focus {
   font-size: 18px;
 }
 
+/* 2026-10-18 - user-directed (4th report): the modal's own footprint must
+   stay constant across every tab, not shrink/grow with content length.
+   Fixed height (not max-height) + flex column + overflow: hidden on the
+   card itself, so only .explainability-tab-panel (flex: 1, its own
+   overflow-y: auto below) scrolls - the title and tab-button row stay
+   fixed/visible the whole time, matching a conventional "sticky header,
+   scrollable body" modal instead of the whole card scrolling as one
+   block. Overrides .modal-card's own overflow-y: auto, which would
+   otherwise scroll title+tabs+content together. */
 .explainability-card {
-  max-width: 860px;
+  /* 2026-10-19 - widened from 1100px (user-reported: the tab strip has
+     grown to 9 tabs since this width was set - Guardrails was the most
+     recent addition - and the wider "?" popovers (480px, up from 360px)
+     need more room too). modal-overlay still centers this, and it's
+     still just a max-width, so it shrinks to fit a narrow viewport. */
+  max-width: 1300px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 2026-10-18 - user-directed (4th report): a base size on the card
+     itself, inherited by EVERY descendant unless something more specific
+     overrides it - robust against the actual bug (a bare <span>/<td>/
+     <strong> with no font-size rule of its own silently falling back to
+     the page's 16px default), instead of chasing individual tags one at
+     a time (the previous "p, li" rule below missed every other element
+     type). h2/eval-score-value/caption/monospace text still get their
+     own explicit, larger/smaller overrides where that's a real, deliberate
+     distinction - not an accident. */
+  font-size: 13px;
+}
+
+.explainability-card h2,
+.explainability-card .modal-actions {
+  flex-shrink: 0;
 }
 
 .explainability-row {
@@ -965,11 +1116,44 @@ textarea:focus {
   gap: 12px;
   margin-top: 12px;
   flex-wrap: wrap;
+  /* 2026-10-19 - user-reported: flex's own default (stretch) was forcing
+     a short panel (e.g. Context Engineering) to match its taller row-mate
+     (Prompt Engineering)'s height, showing as a wall of empty space below
+     the short panel's real content. Each panel now sizes to its own
+     content instead of its row's tallest sibling. */
+  align-items: flex-start;
 }
 
-.explainability-row .panel {
+/* 2026-10-19 - changed from a descendant selector (`.explainability-row
+   .panel`) to a direct-child one: a descendant selector would also catch
+   .panel elements nested inside .explainability-column below (the
+   Engineering Trace tab's stacked Context/Loop/Harness group), forcing
+   flex:1 there too - wrong in a COLUMN flex context, where flex:1 would
+   stretch each stacked panel to fill the column's height equally instead
+   of sizing to its own content. */
+.explainability-row > .panel {
   flex: 1;
   min-width: 220px;
+  margin-top: 0;
+}
+
+/* 2026-10-19 - Engineering Trace tab only: groups Context/Loop/Harness
+   Engineering into one right-hand "column" next to Prompt Engineering,
+   instead of each pairing 1:1 with another panel across 2 separate rows
+   (which is what put Loop Engineering below Prompt Engineering rather
+   than below Context Engineering, as a reader would expect going top to
+   bottom in one column) - user-directed. flex:1/min-width match
+   .explainability-row > .panel so this column takes the same share of
+   the row's width Prompt Engineering's own panel does. */
+.explainability-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.explainability-column .panel {
   margin-top: 0;
 }
 
@@ -1000,7 +1184,10 @@ textarea:focus {
 
 .knowledge-source-group-label {
   display: block;
-  font-size: 12px;
+  /* 2026-10-18 - was 12px, off the app's own established scale (11px for
+     every other label/eyebrow/caption) - a real, confirmed 6th stray size
+     found during the font audit. */
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 2px;
@@ -1023,7 +1210,7 @@ textarea:focus {
 
 .eval-score-group-label {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 2px;
@@ -1173,10 +1360,20 @@ textarea:focus {
   border-radius: 999px;
 }
 
-/* Explainability agent-model "?" icons - native title attribute tooltip,
-   no extra state. .info-icon-unimplemented marks a stub agent (e.g.
-   sql_db_agent) so it reads differently from a real, working one. */
-.info-icon {
+/* 2026-10-18 - the one shared "?" help popover for the whole app
+   (src/components/HelpPopover.tsx) - replaces the old Explainability-only
+   .info-icon/-tooltip (hover/mouse-out-dismissed) and the separate
+   .chunking-help-button/-popover pattern used across Settings/Documents/
+   Admin (click-toggle but not a portal, so it could get clipped by a
+   scrollable ancestor the same way .info-icon-tooltip once did). Every
+   "?" in the app uses this now: click-pinned (not hover), an explicit ×
+   close, a Copy button, portal-rendered into document.body so a
+   scrollable ancestor's `overflow-y: auto` (which implicitly clips
+   `overflow-x` too - a CSS spec rule, not a bug in our own code) can
+   never clip it near an edge. .help-popover-trigger-muted marks a stub
+   feature (e.g. sql_db_agent) so it reads differently from a real,
+   working one. */
+.help-popover-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1190,46 +1387,137 @@ textarea:focus {
   font-size: 10px;
   font-family: inherit;
   font-weight: 700;
-  cursor: help;
+  cursor: pointer;
   flex-shrink: 0;
 }
 
-.info-icon-unimplemented {
+.help-popover-trigger-muted {
   background: var(--border);
   color: var(--text-muted);
 }
 
-.info-icon-wrap {
+.help-popover-wrap {
   position: relative;
   display: inline-flex;
   vertical-align: middle;
 }
 
-.info-icon-tooltip {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+.help-popover {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
   background: var(--surface-sunken);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.4;
+  border-radius: 8px;
   width: max-content;
-  max-width: 260px;
-  z-index: 20;
+  /* 2026-10-19 - matches HelpPopover.tsx's own POPOVER_MAX_WIDTH (600,
+     widened twice now - user-reported, too vertical/cramped). This CSS
+     value is just the fallback before JS sets the real inline maxWidth;
+     keeping them equal avoids a visible resize flash on first paint. */
+  max-width: 600px;
+  max-height: 60vh;
+  z-index: 2000;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   text-align: left;
+}
+
+.help-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--border);
+  /* 2026-10-18 - was 12.5px, an odd one-off that didn't match this app's
+     own established type scale anywhere (13px body / 11px label) -
+     real root cause of a repeated "too many font sizes" report: this
+     component is portal-rendered to document.body, so none of
+     .explainability-card's own scoped typography rules ever reached it
+     no matter how carefully those were tuned. Fixed values here instead
+     of relying on descendant scoping, since a portal breaks that by
+     design. */
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.help-popover-close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.help-popover-close:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.help-popover-body {
+  padding: 10px 12px;
+  overflow-y: auto;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
   white-space: normal;
 }
 
-.info-icon-wrap:hover .info-icon-tooltip,
-.info-icon-wrap:focus-within .info-icon-tooltip {
+.help-popover-body p {
+  margin: 0;
+}
+
+.help-popover-body p + p {
+  margin-top: 8px;
+}
+
+/* A labeled sub-section (e.g. "What it means"/"Why it can look low"/"How
+   to tune it") - real paragraph/spacing structure instead of one run-on
+   sentence, user-directed. */
+.help-popover-section + .help-popover-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.help-popover-section-heading {
   display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.help-popover-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.help-popover-copy {
+  /* 2026-10-19 - icon button, not text - was padding: 4px 10px/font-size
+     11px for the word "Copy"; a square icon tap target reads better
+     centered, with the label moved to the native `title` tooltip. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  color: var(--text-muted);
+}
+
+.help-popover-copy:hover {
+  color: var(--text);
 }
 
 .agent-flow-list {
@@ -1281,11 +1569,84 @@ textarea:focus {
   color: var(--text-muted);
 }
 
-/* min-height holds the tab content area steady across tabs of very
-   different lengths (Tech Stack vs. a single warning panel), same fix
-   already proven on Admin Dashboard's own tab-switch resizing. */
+/* 2026-10-18 - replaces the old min-height: 420px (a floor, not a real
+   fix - a tab taller than 420px still grew the whole modal). flex: 1 fills
+   the remaining height inside .explainability-card's own fixed height
+   (above); min-height: 0 is required for a flex child to actually scroll
+   instead of overflowing its container (a well-known flexbox gotcha -
+   without it, overflow-y: auto has no effect since the flex item refuses
+   to shrink below its content size). Short tabs leave empty space below
+   their content instead of shrinking the modal - the explicit tradeoff
+   for a constant footprint; long tabs scroll within this panel only, the
+   title/tab row above stay fixed and visible throughout. */
 .explainability-tab-panel {
-  min-height: 420px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+/* Typography scale (user feedback, 4 rounds running - this one enforced at
+   the .explainability-card root itself now, see above, not per-tag here):
+     18px  - modal title (h2)
+     15px  - a key metric's own value line (the number that matters)
+     13px  - body/data text (everything else, the card's own base size)
+     12px  - judge raw text (monospace)
+     11px  - eyebrow labels, captions, secondary asides
+   line-height still needs its own rule - the base .explainability-card
+   font-size cascades to everything, but line-height on <p>/<li>
+   specifically keeps paragraphs/list items from using the tighter default
+   browser line-height tables/spans are fine with. */
+.explainability-card p,
+.explainability-card li {
+  line-height: 1.5;
+}
+
+.explainability-card .eval-score-value {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 2px 0;
+}
+
+.explainability-card .eval-score-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+}
+
+/* Judge/prompt raw text must wrap, not truncate with a horizontal
+   scrollbar - the cut-off text and scrollbar were being read as a stray
+   divider line between sections. */
+.explainability-card .llm-context-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: visible;
+}
+
+/* A real, deliberate divider between eval-score-groups (Groundedness /
+   Completeness / How this was calculated) instead of an accidental one -
+   consistent everywhere this pattern is used. */
+.explainability-card .eval-score-group {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.explainability-card .eval-score-group:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Agent Flow / ReAct Flow table's secondary "why" line - deliberately
+   smaller/muted than the cell's own primary text, not the whole cell
+   shrunk to caption size (task.focus was inheriting 11px dev-note-inline
+   meant only for the reasoning sub-line). */
+.explainability-card .agent-flow-reasoning {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-muted);
 }
 
 /* A real multi-column data table (Agent Flow, ReAct Flow, Engineering
@@ -1294,6 +1655,14 @@ textarea:focus {
    table with several real columns. */
 .explainability-data-table {
   width: 100%;
+  /* 2026-10-19 - without this, a cell holding an unbreakable run (e.g. the
+     Prompt Engineering table's ROLE column: "vector_kb_agent/lms_ops_agent/
+     sql_db_agent/..." has no spaces to wrap at) forces the table, and so
+     its containing .panel/.explainability-row, wider than the tab's own
+     frame instead of wrapping inside it - confirmed/reported live. Fixed
+     columns + overflow-wrap below keep the table at exactly its container's
+     width regardless of unbreakable cell content. */
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
   margin-top: 6px;
@@ -1305,6 +1674,7 @@ textarea:focus {
   padding: 7px 10px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .explainability-data-table thead th {
@@ -1314,6 +1684,16 @@ textarea:focus {
   text-transform: uppercase;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-strong);
+}
+
+/* A row-label th (no thead - a 2-column label:value table, e.g. the
+   Retrieval Eval Score's golden-dataset numbers) reads as a caption next
+   to its value, not a competing data cell. */
+.explainability-data-table tbody th {
+  width: 160px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .explainability-data-table tbody tr:last-child td {
@@ -1459,17 +1839,6 @@ textarea:focus {
   gap: 6px;
 }
 
-.chunk-size-help-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  width: 280px;
-  box-shadow: var(--shadow-lg);
-  font-weight: 400;
-  text-transform: none;
-}
-
 .chunking-confirm-size-row {
   display: flex;
   gap: 10px;
@@ -1513,22 +1882,8 @@ textarea:focus {
   margin-bottom: 8px;
 }
 
-.chunking-help-button {
-  width: 15px;
-  height: 15px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--gold);
-  background: var(--gold-soft);
-  color: var(--gold);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
 /* Phase 170 (round 1) - admin-only link to the in-app architecture docs
-   viewer. Same small-pill shape as .chunking-help-button, --accent tokens
+   viewer. Same small-pill shape the old .chunking-help-button used, --accent tokens
    instead of --gold so it reads as a distinct kind of button (opens a
    doc, not an inline explanation). */
 .doc-link {
@@ -1607,7 +1962,10 @@ textarea:focus {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12.5px;
-  color: var(--text-muted);
+  /* 2026-10-18 - was --text-muted, which made real explanatory content
+     (not just a caption) read dim/low-contrast. This is body text, full
+     --text strength; --text-muted stays for genuinely secondary labels. */
+  color: var(--text);
 }
 
 .chunking-help-popover p {
@@ -2007,7 +2365,9 @@ textarea:focus {
 
 .dev-note-inline {
   color: var(--text-muted);
-  font-size: 11px;
+  /* 2026-10-18 - 11px -> 12px; this class also carries real explanatory
+     sentences, not just tiny metadata labels, and 11px read too small. */
+  font-size: 12px;
 }
 
 .upload-settings-row {

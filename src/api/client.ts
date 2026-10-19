@@ -18,6 +18,7 @@ import type {
   FeedbackListResponse,
   FeedbackVote,
   CiStatusResponse,
+  EvalRequestOptions,
   EvalRunDetail,
   EvalRunListResponse,
   FaqSubmissionListResponse,
@@ -164,9 +165,18 @@ export async function askQuery(
       enable_conversation_memory: true,
       conversation_id: conversationId,
       search_options: options
-        ? { search_strategy: options.searchStrategy, lambda_mult: options.lambdaMult }
+        ? {
+            search_strategy: options.searchStrategy,
+            lambda_mult: options.lambdaMult,
+            top_k: options.topK,
+            enable_corrective_retry: options.enableCorrectiveRetry,
+          }
         : undefined,
       generation_options: options ? { temperature: options.temperature } : undefined,
+      eval_options:
+        options && (options.judgeModel || options.evalScoreThreshold !== undefined)
+          ? { judge_model: options.judgeModel, eval_score_threshold: options.evalScoreThreshold }
+          : undefined,
     }),
   });
 
@@ -180,6 +190,7 @@ export async function askAgenticQuery(
   userProfile: UserProfile,
   query: string,
   conversationId: string | null,
+  options?: EvalRequestOptions,
 ): Promise<AgenticRagResponse> {
   const response = await fetch(`${API_BASE_URL}/v1/single-agentic-rag-retrieval/query`, {
     method: "POST",
@@ -189,6 +200,11 @@ export async function askAgenticQuery(
       query,
       enable_conversation_memory: true,
       conversation_id: conversationId,
+      search_strategy: options?.agentSearchStrategy,
+      eval_options:
+        options && (options.judgeModel || options.evalScoreThreshold !== undefined)
+          ? { judge_model: options.judgeModel, eval_score_threshold: options.evalScoreThreshold }
+          : undefined,
     }),
   });
 
@@ -202,6 +218,7 @@ export async function askMultiAgenticQuery(
   userProfile: UserProfile,
   query: string,
   conversationId: string | null,
+  options?: EvalRequestOptions,
 ): Promise<MultiAgenticRagResponse> {
   const response = await fetch(`${API_BASE_URL}/v1/multi-agentic-rag-retrieval/query`, {
     method: "POST",
@@ -211,6 +228,11 @@ export async function askMultiAgenticQuery(
       query,
       enable_conversation_memory: true,
       conversation_id: conversationId,
+      search_strategy: options?.agentSearchStrategy,
+      eval_options:
+        options && (options.judgeModel || options.evalScoreThreshold !== undefined)
+          ? { judge_model: options.judgeModel, eval_score_threshold: options.evalScoreThreshold }
+          : undefined,
     }),
   });
 

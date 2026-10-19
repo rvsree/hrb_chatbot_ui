@@ -23,6 +23,7 @@ import {
 } from "../api/client";
 import AdminConversationModal from "../components/AdminConversationModal";
 import AdminFeedbackModal from "../components/AdminFeedbackModal";
+import HelpPopover from "../components/HelpPopover";
 import InterviewQaCardView from "../components/InterviewQaCardView";
 import InterviewQaEditorModal from "../components/InterviewQaEditorModal";
 import LeaveReviewModal from "../components/LeaveReviewModal";
@@ -177,7 +178,6 @@ export default function AdminDashboardPage() {
   const [ciStatus, setCiStatus] = useState<CiStatusResponse | null>(null);
   const [metricsRows, setMetricsRows] = useState<PipelineMetricsRow[]>([]);
   const [metricsWindowHours, setMetricsWindowHours] = useState(24);
-  const [openMetricHelp, setOpenMetricHelp] = useState<string | null>(null);
   const [interviewQaCards, setInterviewQaCards] = useState<InterviewQaCard[]>([]);
   const [interviewQaTopicFilter, setInterviewQaTopicFilter] = useState<string>("");
   const [viewingInterviewQaCard, setViewingInterviewQaCard] = useState<InterviewQaCard | null>(null);
@@ -1082,36 +1082,21 @@ export default function AdminDashboardPage() {
                     <th>Requests</th>
                     <th>
                       Avg latency
-                      <button
-                        type="button"
-                        className="chunking-help-button"
-                        aria-label="Fine-tune recommendation for average latency"
-                        onClick={() => setOpenMetricHelp(openMetricHelp === "avg_latency_ms" ? null : "avg_latency_ms")}
-                      >
-                        ?
-                      </button>
+                      <HelpPopover label="Fine-tune recommendation for average latency">
+                        <p>{METRIC_RECOMMENDATIONS.avg_latency_ms}</p>
+                      </HelpPopover>
                     </th>
                     <th>
                       p95 latency
-                      <button
-                        type="button"
-                        className="chunking-help-button"
-                        aria-label="Fine-tune recommendation for p95 latency"
-                        onClick={() => setOpenMetricHelp(openMetricHelp === "p95_latency_ms" ? null : "p95_latency_ms")}
-                      >
-                        ?
-                      </button>
+                      <HelpPopover label="Fine-tune recommendation for p95 latency">
+                        <p>{METRIC_RECOMMENDATIONS.p95_latency_ms}</p>
+                      </HelpPopover>
                     </th>
                     <th>
                       Total tokens
-                      <button
-                        type="button"
-                        className="chunking-help-button"
-                        aria-label="Fine-tune recommendation for total tokens"
-                        onClick={() => setOpenMetricHelp(openMetricHelp === "total_tokens" ? null : "total_tokens")}
-                      >
-                        ?
-                      </button>
+                      <HelpPopover label="Fine-tune recommendation for total tokens">
+                        <p>{METRIC_RECOMMENDATIONS.total_tokens}</p>
+                      </HelpPopover>
                     </th>
                   </tr>
                 </thead>
@@ -1137,11 +1122,6 @@ export default function AdminDashboardPage() {
                 </p>
               )}
             </div>
-            {openMetricHelp && (
-              <div className="chunking-help-popover" style={{ position: "static", marginTop: 12 }}>
-                <p>{METRIC_RECOMMENDATIONS[openMetricHelp]}</p>
-              </div>
-            )}
           </>
         )}
 

@@ -12,6 +12,9 @@ export interface RetrievedChunk {
   chunk_index: number;
   text: string;
   score: number | null;
+  // Phase 221 - hybrid search only: which list(s) (sparse/dense) found
+  // this chunk before Reciprocal Rank Fusion merged them. Null otherwise.
+  matched_by: string[] | null;
 }
 
 export interface AnswerInfo {
@@ -23,6 +26,8 @@ export interface RetrievalInfo {
   vector_db: string;
   search_strategy: string;
   applied_filter: Record<string, unknown> | null;
+  /** Phase 232 - how many documents Document ACL (Phase 231) excluded from this answer's candidate pool. 0 = none. */
+  acl_denied_count: number;
   sources: RetrievedChunk[];
 }
 
@@ -49,6 +54,24 @@ export interface EvalScores {
   retrieval_precision: number | null;
   retrieval_relevant_chunk_indices: number[];
   retrieval_precision_explanation: string | null;
+  // Phase 219 - NOT true recall (see the "?" tooltip this renders next to) -
+  // an estimate relative to a wider exact-KNN candidate pool, pool size
+  // included so the estimate's own bound is visible, not hidden.
+  retrieval_recall_estimate: number | null;
+  retrieval_f1_estimate: number | null;
+  retrieval_recall_pool_size: number | null;
+  // Phase 225 - the real denominator behind retrieval_recall_estimate:
+  // how many chunks were judged relevant across the whole wider pool,
+  // before scoping down to just the originally-retrieved subset.
+  retrieval_recall_relevant_count: number | null;
+  // Phase 226 - true when enable_corrective_retry was on AND the first
+  // retrieval's own precision fell below eval_score_threshold, so
+  // retrieval ran a second time (doubled top_k) before this answer was
+  // generated.
+  retrieval_retry_attempted: boolean;
+  judge_model_used: string | null;
+  below_threshold: boolean;
+  below_threshold_metrics: string[];
 }
 
 export interface ChatHistoryMessage {
@@ -76,6 +99,30 @@ export interface LlmContextInfo {
   mcp_tool_calls: McpToolCallDetail[];
 }
 
+// Phase 224 - real per-answer NeMo Guardrails status. "blocked" is only
+// reachable on the output check - a blocked input raises a 422 before any
+// response is built, so it never reaches this field at all.
+// Phase 229 - one configured NeMo Guardrails flow that actually ran for
+// this check, with NeMo's own real decision log - live-verified to
+// include every configured rail, not just the one that blocked/modified
+// something, so a clean pass is still demonstrable, not just asserted.
+export interface ActivatedRailInfo {
+  name: string;
+  decisions: string[];
+  stop: boolean;
+}
+
+export interface GuardrailCheckStatus {
+  status: "pass" | "modified" | "blocked";
+  rail: string | null;
+  activated_rails: ActivatedRailInfo[];
+}
+
+export interface GuardrailInfo {
+  input: GuardrailCheckStatus;
+  output: GuardrailCheckStatus;
+}
+
 export interface ExplainabilityInfo {
   request_id: string;
   served_from_cache: boolean;
@@ -86,6 +133,7 @@ export interface ExplainabilityInfo {
   eval_scores: EvalScores | null;
   temperature: number | null;
   llm_context: LlmContextInfo | null;
+  guardrails: GuardrailInfo;
 }
 
 export interface RagQueryResponse {
@@ -228,12 +276,41 @@ export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
 // "similarity" is plain vector search, "mmr" trades some relevance for less
 // redundant results, "keyword" is real BM25 lexical ranking, "hybrid" merges
 // "keyword" and "similarity" via Reciprocal Rank Fusion.
-export type SearchStrategy = "similarity" | "mmr" | "keyword" | "hybrid";
+// Phase 218 - "knn" added: exact, brute-force cosine search, computed
+// directly rather than approximated by either backend's own HNSW index.
+export type SearchStrategy = "similarity" | "mmr" | "keyword" | "hybrid" | "knn";
 
-export interface GenaiRagOptions {
+// Phase 228 - narrower than SearchStrategy above on purpose:
+// search_knowledge_base() (the tool both single-agentic-rag and multi-
+// agentic-rag call) only ever understands these 2 values - "keyword"/
+// "hybrid"/"knn" would silently no-op there, the exact "decorative
+// control" bug this project avoids elsewhere.
+export type AgentSearchStrategy = "similarity" | "mmr";
+
+// Phase 215 - judge_model/eval_score_threshold are common to all 3
+// pipelines (eval/judge scoring applies everywhere), not genai-rag-only.
+// Phase 228 - agentSearchStrategy is a different NAME than GenaiRagOptions'
+// own `searchStrategy` deliberately (not just a narrower type) - the two
+// are genuinely different fields (a per-call AGENT DEFAULT here vs. a
+// directly-applied request param there), and a same-named field with a
+// narrower type here would be an invalid TS interface override once
+// GenaiRagOptions below redeclares `searchStrategy` with the wider enum.
+export interface EvalRequestOptions {
+  judgeModel?: string;
+  evalScoreThreshold?: number;
+  agentSearchStrategy?: AgentSearchStrategy;
+}
+
+export interface GenaiRagOptions extends EvalRequestOptions {
   temperature: number;
   searchStrategy: SearchStrategy;
   lambdaMult?: number;
+  topK?: number;
+  // Phase 226 - genai-rag only (search_options is genai-rag-only too) -
+  // retries retrieval once, before any answer is generated, when the
+  // first retrieval's own live precision is below evalScoreThreshold.
+  // No-op without evalScoreThreshold set.
+  enableCorrectiveRetry?: boolean;
 }
 
 // tool_type: Phase 126 - which kind of backend this call hit. Not a closed
@@ -249,6 +326,9 @@ export interface ToolCallInfo {
   latency_ms: number | null;
   success: boolean;
   iteration: number | null;
+  // Phase 216 - the agent's own strategy choice for a search_knowledge_base
+  // call ("similarity"/"mmr"). Null for every other tool.
+  search_strategy: string | null;
 }
 
 export interface AgentTaskInfo {
@@ -270,6 +350,17 @@ export interface ChatMessage {
   tasks?: AgentTaskInfo[];
   explainability?: ExplainabilityInfo;
   retrievalInfo?: RetrievalInfo;
+  // Phase 223 - the Eval Score Threshold actually sent with this request
+  // (Settings' RAG Config tab), so the Explainability panel can show the
+  // real target number next to eval_scores.below_threshold, not just the
+  // boolean. Undefined when no threshold was set that turn.
+  evalScoreThreshold?: number;
+  // 2026-10-19 round 3 - genai-rag only: whether "Retry Once on Low
+  // Retrieval Score" was armed for THIS request, so Gate 4's own
+  // Explainability panel can say "retry was off" vs. "retry was on but
+  // didn't need to fire" instead of collapsing both into one ambiguous
+  // "false" on eval_scores.retrieval_retry_attempted.
+  enableCorrectiveRetry?: boolean;
   // Phase 136 - set only for an answer from the Chat GenAI Workflow
   // (files attached directly in the composer) - no vector DB/MCP access,
   // a different, much smaller Explainability view applies. Phase 145

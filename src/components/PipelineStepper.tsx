@@ -1,4 +1,5 @@
-import { Fragment, useState } from "react";
+import { Fragment } from "react";
+import HelpPopover from "./HelpPopover";
 import type { PipelineJobDetail, PipelineStatusResponse, PipelineStepDetail, PipelineWorkflowRun } from "../types";
 
 interface PipelineStepperProps {
@@ -72,8 +73,6 @@ const PHASE_BAR_LABELS = [
 // nearest eval-gate release-gate result if one exists. Every link points
 // at the real GitHub Actions log - nothing here re-hosts a log.
 export default function PipelineStepper({ pipeline }: PipelineStepperProps) {
-  const [openHelp, setOpenHelp] = useState<string | null>(null);
-
   if (pipeline.error) {
     return <p className="error-banner">{pipeline.error}</p>;
   }
@@ -314,14 +313,9 @@ export default function PipelineStepper({ pipeline }: PipelineStepperProps) {
               <span className="pipeline-run-title">
                 {run.workflow_file} &middot; Build #{run.run_number}
                 {WORKFLOW_HELP[run.workflow_file] && (
-                  <button
-                    type="button"
-                    className="chunking-help-button"
-                    aria-label={`What does ${run.workflow_file} do?`}
-                    onClick={() => setOpenHelp(openHelp === run.workflow_file ? null : run.workflow_file)}
-                  >
-                    ?
-                  </button>
+                  <HelpPopover label={`What does ${run.workflow_file} do?`}>
+                    <p>{WORKFLOW_HELP[run.workflow_file]}</p>
+                  </HelpPopover>
                 )}
               </span>
               <span className={`status-badge status-${runStatusClass(run).toLowerCase()}`}>{run.conclusion ?? run.status}</span>
@@ -333,11 +327,6 @@ export default function PipelineStepper({ pipeline }: PipelineStepperProps) {
                 </a>
               </span>
             </div>
-            {openHelp === run.workflow_file && (
-              <div className="chunking-help-popover" style={{ position: "static", marginBottom: 10 }}>
-                <p>{WORKFLOW_HELP[run.workflow_file]}</p>
-              </div>
-            )}
 
             {run.jobs.map((job, jobIndex) => (
               <div className="pipeline-job" key={jobIndex}>
@@ -345,21 +334,11 @@ export default function PipelineStepper({ pipeline }: PipelineStepperProps) {
                   {job.name}
                   {jobDuration(job) ? ` · ${jobDuration(job)}` : ""}
                   {JOB_HELP[job.name] && (
-                    <button
-                      type="button"
-                      className="chunking-help-button"
-                      aria-label={`What does ${job.name} do?`}
-                      onClick={() => setOpenHelp(openHelp === `job:${job.name}` ? null : `job:${job.name}`)}
-                    >
-                      ?
-                    </button>
+                    <HelpPopover label={`What does ${job.name} do?`}>
+                      <p>{JOB_HELP[job.name]}</p>
+                    </HelpPopover>
                   )}
                 </div>
-                {openHelp === `job:${job.name}` && (
-                  <div className="chunking-help-popover" style={{ position: "static", marginBottom: 8 }}>
-                    <p>{JOB_HELP[job.name]}</p>
-                  </div>
-                )}
                 <div className="pipeline-steps">
                   {job.steps.map((step, stepIndex) => (
                     <Fragment key={stepIndex}>
@@ -389,14 +368,9 @@ export default function PipelineStepper({ pipeline }: PipelineStepperProps) {
         <div className="pipeline-run-head">
           <span className="pipeline-run-title">
             Golden dataset release gate
-            <button
-              type="button"
-              className="chunking-help-button"
-              aria-label="What is the golden dataset release gate?"
-              onClick={() => setOpenHelp(openHelp === "eval-gate" ? null : "eval-gate")}
-            >
-              ?
-            </button>
+            <HelpPopover label="What is the golden dataset release gate?">
+              <p>{WORKFLOW_HELP["eval-gate"]}</p>
+            </HelpPopover>
           </span>
           {pipeline.eval_gate ? (
             <span className={`status-badge status-${pipeline.eval_gate.decision.toLowerCase()}`}>{pipeline.eval_gate.decision}</span>
@@ -404,11 +378,6 @@ export default function PipelineStepper({ pipeline }: PipelineStepperProps) {
             <span className="pipeline-run-meta">not run for this commit</span>
           )}
         </div>
-        {openHelp === "eval-gate" && (
-          <div className="chunking-help-popover" style={{ position: "static", marginBottom: 10 }}>
-            <p>{WORKFLOW_HELP["eval-gate"]}</p>
-          </div>
-        )}
         {pipeline.eval_gate && (
           <p className="dev-note-inline">
             {new Date(pipeline.eval_gate.run_at).toLocaleString()} &middot; {pipeline.eval_gate.scored_cases}/
