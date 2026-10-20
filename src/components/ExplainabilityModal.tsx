@@ -367,6 +367,7 @@ type ExplainabilityTab =
   | "agentFlow"
   | "evalScore"
   | "guardrails"
+  | "optimization"
   | "engineeringTrace"
   | "llmContext"
   | "citations"
@@ -392,6 +393,12 @@ const EXPLAINABILITY_TABS: { id: ExplainabilityTab; label: string }[] = [
   // (user-requested, round 3) even though the content now covers all 6
   // gates, not just NeMo's.
   { id: "guardrails", label: "Guardrails" },
+  // 2026-10-20 - user-requested: its own tab, "Caching" as the first child
+  // sub-tab (same parent/child pattern Eval Score and Guardrails already
+  // use) - room for more optimization techniques (rate limiting, parallel
+  // tool calls, etc.) to join as sibling sub-tabs later without another
+  // top-level tab each time.
+  { id: "optimization", label: "Optimization" },
   { id: "engineeringTrace", label: "Engineering Trace" },
   { id: "llmContext", label: "LLM Context" },
   { id: "citations", label: "Citations" },
@@ -456,6 +463,99 @@ const GUARDRAIL_GATES: { id: GuardrailGateId; label: string }[] = [
   { id: "gate4", label: "Gate 4 · Context Grade" },
   { id: "gate5", label: "Gate 5 · Grounding" },
   { id: "gate6", label: "Gate 6 · Delivery" },
+];
+
+// 2026-10-20 - the real caching techniques this project has actually
+// built, user-requested as their own "?"-documented tab. Grounded
+// directly in each cache client's own docstring, not generic caching
+// advice - common/clients/cache_client/answer_cache.py,
+// common/clients/cache_client/embedding_cache.py, and
+// common/clients/auth_client/oauth_client.py's module-level token cache.
+// Round 2, user-requested: broadened past this project's own 3 to the
+// wider set of caching techniques worth knowing for interview purposes,
+// even the ones not built here - each one says plainly whether it's
+// real/live in this project or not, never blurs the two.
+type CachingTechniqueId =
+  | "answerCache"
+  | "embeddingCache"
+  | "tokenCache"
+  | "redis"
+  | "cdnCache"
+  | "kvCache"
+  | "semanticCache"
+  | "promptCache";
+const CACHING_TECHNIQUES: {
+  id: CachingTechniqueId;
+  label: string;
+  implemented: boolean;
+  what: string;
+  mechanism: string;
+  scope: string;
+}[] = [
+  {
+    id: "answerCache",
+    label: "Answer Cache",
+    implemented: true,
+    what: "Caches a full answer (text + sources + explainability data) so an identical question doesn't re-run retrieval and generation.",
+    mechanism: "Redis-backed, exact-match only - keyed by a hash of the question plus every setting that could change the answer (never who asked, so the same policy question gets the same cached answer for everyone). 6-hour expiry, and cleared immediately whenever a document changes, so an edited policy is never served stale from cache.",
+    scope: "genai-rag only - not single/multi-agentic-rag, since a tool-driven answer (e.g. a live leave balance) can depend on data that changes between requests. Real code, but production currently has no REDIS_URL configured (confirmed via the live /health check, which lists no Redis entry at all) - the client fails open, so this degrades to \"no caching\" in production today, not a broken request.",
+  },
+  {
+    id: "embeddingCache",
+    label: "Embedding Cache",
+    implemented: true,
+    what: "Avoids re-generating the embedding vector for a chunk of text that hasn't actually changed.",
+    mechanism: "Redis-backed, exact-match on (content hash, embedding model) - if the same chunk text gets re-indexed with the same model, the embedding is reused instead of calling the embedding model again. 30-day expiry (long, since a given content hash's embedding never changes - the cache only ever goes stale if the content itself changes, which gives it a new hash).",
+    scope: "Document ingestion only - no effect on chat response time. Same real-but-not-live-in-production caveat as the Answer Cache above - no REDIS_URL configured there today.",
+  },
+  {
+    id: "tokenCache",
+    label: "OAuth2 Token Cache",
+    implemented: true,
+    what: "Avoids re-authenticating with hrb_lms_mcp on every single tool call.",
+    mechanism: "In-process (a plain module-level variable, not Redis) - a Bearer token is requested once, then reused for every call until it's about to expire (a 30-second safety margin before the real expiry), at which point a fresh one is requested automatically.",
+    scope: "Any pipeline that calls hrb_lms_mcp's MCP tools (leave balance/history, HITL review). Per-process, not shared across App Runner instances - each running instance keeps its own cached token. Unlike the 2 above, this one doesn't depend on Redis at all, so it's genuinely live in production.",
+  },
+  {
+    id: "redis",
+    label: "Redis (the underlying technology)",
+    implemented: true,
+    what: "An in-memory key-value store - the actual caching technology behind the Answer Cache and Embedding Cache above. Not a cache technique on its own, it's the infrastructure both of those are built on top of.",
+    mechanism: "Stores data in RAM, not disk, so reads/writes are extremely fast compared to a real database round-trip. Supports a native per-key expiry (TTL), which is exactly how both caches above auto-expire old entries without a separate cleanup job. Every value in both caches here is plain JSON, decoded on read.",
+    scope: "Configured via REDIS_URL. Locally this can point at a real Redis instance; in production, the real/planned path is AWS ElastiCache (see docs/dev-reference/deployment-guide/04-redis-cache.html) - provisioning that is still a planning doc, not done, which is exactly why production has no REDIS_URL set today.",
+  },
+  {
+    id: "cdnCache",
+    label: "CDN / Edge Cache (CloudFront)",
+    implemented: true,
+    what: "Caches the built frontend's static files (HTML/JS/CSS) at edge locations close to the browser, so a repeat visitor doesn't re-download them from S3 on every load.",
+    mechanism: "AWS CloudFront sits in front of the S3 bucket hosting hrb_chatbot_ui's build output. A deploy explicitly invalidates the cache (aws cloudfront create-invalidation --paths \"/*\") so the new build is served immediately instead of waiting for the old cached version's TTL to expire.",
+    scope: "Frontend only - a genuinely different kind of caching than everything else on this page (static assets at the network edge, not application data in Redis).",
+  },
+  {
+    id: "kvCache",
+    label: "KV Cache",
+    implemented: false,
+    what: "Inside a transformer model, generating each new token normally means recomputing attention over every token that came before it. The KV (key-value) cache stores those per-token key/value vectors once, so generating token N+1 reuses token N's already-computed values instead of redoing that work from scratch.",
+    mechanism: "This is an inference-engine-level optimization (inside the model server itself), not something an application calling a hosted API can implement or control.",
+    scope: "Not applicable here - this project calls OpenAI/Anthropic's hosted APIs, where KV caching (if used) happens entirely inside their own inference infrastructure, invisible to this codebase. Included because it's a common interview topic for anyone asked about LLM inference performance, not because it's something this project built.",
+  },
+  {
+    id: "semanticCache",
+    label: "Semantic Cache",
+    implemented: false,
+    what: "A cache hit on a semantically similar question, not just an identical one - e.g. \"how many PTO days do I get\" and \"what's my paid time off balance\" could both hit the same cached answer, by comparing embedding similarity instead of exact text.",
+    mechanism: "Would need a vector similarity lookup against previously-cached questions (a small, separate vector index just for cache keys) plus a similarity threshold decision, instead of this project's current exact-match hash lookup.",
+    scope: "Not built here - the real Answer Cache above is exact-match only, by design (see its own scope note). This is the natural next step beyond it, and a common follow-up question once exact-match caching comes up in an interview.",
+  },
+  {
+    id: "promptCache",
+    label: "Prompt / Context Caching",
+    implemented: false,
+    what: "Some LLM providers (Anthropic's prompt caching, OpenAI's automatic caching of repeated prompt prefixes) cache the processed representation of a long, repeated prefix - like a system prompt or a large retrieved-context block - so paying the full compute cost for it only happens once, not on every request that reuses it.",
+    mechanism: "Provider-managed - enabled via specific API parameters/headers (Anthropic) or automatic above a length threshold (OpenAI), not something this project implements itself.",
+    scope: "Not explicitly used here - this project's own LLM client wrappers don't opt into either provider's prompt-caching feature today, even though the system prompts and retrieved context sent on every request would be a natural fit for it.",
+  },
 ];
 
 function guardrailStatusLabel(status: "pass" | "modified" | "blocked"): string {
@@ -822,6 +922,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
   // instead of half of it.
   const [guardrailsSubTab, setGuardrailsSubTab] = useState<GuardrailGateId>("gate1");
   const [evalScoreSubTab, setEvalScoreSubTab] = useState<"retrieval" | "response">("retrieval");
+  const [optimizationSubTab, setOptimizationSubTab] = useState<"caching">("caching");
 
   // Phase 216 - chunking strategy is a per-document, ingestion-time setting
   // (not captured anywhere in a query response), so it's fetched here from
@@ -1842,6 +1943,96 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
             </div>
           );
         })()}
+
+        {activeTab === "optimization" && (
+          <div className="explainability-tab-panel">
+            <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 12 }}>
+              <button
+                type="button"
+                className={optimizationSubTab === "caching" ? undefined : "secondary"}
+                onClick={() => setOptimizationSubTab("caching")}
+              >
+                Caching
+              </button>
+            </div>
+            {optimizationSubTab === "caching" && (
+              <>
+                <p className="dev-note-inline">
+                  5 real caching techniques this project actually uses, plus 3 more worth knowing that aren't built
+                  here - each card says plainly which is which, not every one applies to every message.
+                </p>
+                <span className="eval-score-group-label" style={{ display: "block", marginTop: 4 }}>
+                  Implemented in this project
+                </span>
+                {CACHING_TECHNIQUES.filter((technique) => technique.implemented).map((technique) => (
+                  <div
+                    key={technique.id}
+                    className={
+                      technique.id === "answerCache" && message.explainability
+                        ? message.explainability.served_from_cache
+                          ? "panel panel-success"
+                          : "panel panel-info"
+                        : "panel panel-info"
+                    }
+                    style={{ marginBottom: 12 }}
+                  >
+                    <span className="panel-eyebrow">
+                      {technique.label}
+                      <InfoIcon
+                        info={{
+                          label: `What is "${technique.label}"?`,
+                          description: (
+                            <>
+                              <HelpSection heading="What it does">{technique.what}</HelpSection>
+                              <HelpSection heading="How it works">{technique.mechanism}</HelpSection>
+                              <HelpSection heading="When it applies">{technique.scope}</HelpSection>
+                            </>
+                          ),
+                          implemented: true,
+                        }}
+                      />
+                    </span>
+                    {technique.id === "answerCache" && (
+                      <p className="eval-score-caption">
+                        {message.explainability
+                          ? message.explainability.served_from_cache
+                            ? "This answer: served from cache."
+                            : "This answer: not from cache (live retrieval + generation)."
+                          : "This answer: cache status not available."}
+                      </p>
+                    )}
+                    {technique.id !== "answerCache" && <p className="eval-score-caption">{technique.scope}</p>}
+                  </div>
+                ))}
+
+                <span className="eval-score-group-label" style={{ display: "block", marginTop: 16 }}>
+                  Not implemented here - worth knowing for interview purposes
+                </span>
+                {CACHING_TECHNIQUES.filter((technique) => !technique.implemented).map((technique) => (
+                  <div key={technique.id} className="panel panel-warning" style={{ marginBottom: 12 }}>
+                    <span className="panel-eyebrow">
+                      {technique.label}
+                      <InfoIcon
+                        info={{
+                          label: `What is "${technique.label}"?`,
+                          description: (
+                            <>
+                              <HelpSection heading="What it does">{technique.what}</HelpSection>
+                              <HelpSection heading="How it works">{technique.mechanism}</HelpSection>
+                              <HelpSection heading="Why it's not built here">{technique.scope}</HelpSection>
+                            </>
+                          ),
+                          implemented: false,
+                        }}
+                      />
+                    </span>
+                    <p className="eval-score-caption">{technique.scope}</p>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
 
         {activeTab === "engineeringTrace" && (() => {
           const mode = detectPipelineMode(message);

@@ -47,6 +47,19 @@ const WORKFLOW_ORDER: Record<string, number> = {
   "deploy-lambda.yml": 3,
 };
 
+// 2026-10-20 - user-reported: this card still showed the raw ci.yml/
+// deploy.yml filename as its own title, even though Phase 235 already
+// gave "Full run history" plain-language names with the real filename
+// moved behind "?" - this was the one place that treatment got missed.
+// Mirrors api/admin/manage_admin.py's own _WORKFLOW_DISPLAY_NAMES map -
+// frontend-only (same reasoning WORKFLOW_HELP/JOB_HELP below already use
+// for their own copy), so keep the 2 in sync by hand if either changes.
+const WORKFLOW_DISPLAY_NAMES: Record<string, string> = {
+  "ci.yml": "Continuous Integration Checks",
+  "deploy.yml": "Production Deploy",
+  "deploy-lambda.yml": "Async Ingestion Deploy",
+};
+
 // Phase 195/198 - "?" explainer text, grounded in the real workflow YAML
 // (.github/workflows/deploy.yml / deploy-lambda.yml / eval-gate.yml), but
 // written for a non-technical reader - the underlying idea and a concrete
@@ -497,12 +510,13 @@ export default function PipelineStepper({
           <div className="pipeline-run">
             <div className="pipeline-run-head">
               <span className="pipeline-run-title">
-                {run.workflow_file} &middot; Build #{run.run_number}
-                {WORKFLOW_HELP[run.workflow_file] && (
-                  <HelpPopover label={`What does ${run.workflow_file} do?`}>
-                    <p>{WORKFLOW_HELP[run.workflow_file]}</p>
-                  </HelpPopover>
-                )}
+                {WORKFLOW_DISPLAY_NAMES[run.workflow_file] ?? run.workflow_file} &middot; Build #{run.run_number}
+                <HelpPopover label={`What is "${WORKFLOW_DISPLAY_NAMES[run.workflow_file] ?? run.workflow_file}"?`}>
+                  <p>
+                    This is GitHub Actions' own workflow file: <code>{run.workflow_file}</code>.
+                  </p>
+                  {WORKFLOW_HELP[run.workflow_file] && <p>{WORKFLOW_HELP[run.workflow_file]}</p>}
+                </HelpPopover>
               </span>
               <span className={`status-badge status-${runStatusClass(run).toLowerCase()}`}>{run.conclusion ?? run.status}</span>
               <span className="pipeline-run-meta">

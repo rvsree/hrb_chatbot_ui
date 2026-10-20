@@ -14,10 +14,22 @@
      readable" on white/light surfaces) for better contrast. */
   --text-muted: #55523f;
 
-  --accent: #2f6f4f;
-  --accent-strong: #235639;
-  --accent-soft: #e6f1ea;
+  /* 2026-10-20 - was green (#2f6f4f), user-requested: a mild, elegant
+     color across the app - muted slate blue, chosen to pair with the
+     existing warm paper --bg rather than clash with it. */
+  --accent: #4a6fa5;
+  --accent-strong: #35537f;
+  --accent-soft: #e8eef6;
   --accent-contrast: #ffffff;
+
+  /* 2026-10-20 - separated from --accent on purpose: status dots/badges
+     need conventional green=pass/red=fail/gray=pending semantics
+     regardless of whatever the brand accent color is - reuses the old
+     green --accent values exactly, since that's what this was already
+     doing by coincidence before the accent became blue. */
+  --success: #2f6f4f;
+  --success-strong: #235639;
+  --success-soft: #e6f1ea;
 
   --info: #3a6ea8;
   --info-soft: #e8f0fa;
@@ -53,10 +65,14 @@
        surfaces (same "mild gray, not readable" report). */
     --text-muted: #c2beae;
 
-    --accent: #6cb68c;
-    --accent-strong: #8ccba7;
-    --accent-soft: rgba(108, 182, 140, 0.14);
-    --accent-contrast: #0c1310;
+    --accent: #8fb0d9;
+    --accent-strong: #a9c3e3;
+    --accent-soft: rgba(143, 176, 217, 0.14);
+    --accent-contrast: #0d1620;
+
+    --success: #6cb68c;
+    --success-strong: #8ccba7;
+    --success-soft: rgba(108, 182, 140, 0.14);
 
     --info: #7badea;
     --info-soft: rgba(123, 173, 234, 0.14);
@@ -86,10 +102,14 @@
   --text: #f0efe6;
   --text-muted: #c2beae;
 
-  --accent: #6cb68c;
-  --accent-strong: #8ccba7;
-  --accent-soft: rgba(108, 182, 140, 0.14);
-  --accent-contrast: #0c1310;
+  --accent: #8fb0d9;
+  --accent-strong: #a9c3e3;
+  --accent-soft: rgba(143, 176, 217, 0.14);
+  --accent-contrast: #0d1620;
+
+  --success: #6cb68c;
+  --success-strong: #8ccba7;
+  --success-soft: rgba(108, 182, 140, 0.14);
 
   --info: #7badea;
   --info-soft: rgba(123, 173, 234, 0.14);
@@ -320,7 +340,17 @@ textarea:focus {
   flex-shrink: 0;
 }
 
-.sidebar-section-header:hover {
+/* 2026-10-20 - "button." prefix, not just ".sidebar-section-header:hover" -
+   the global button:hover:not(:disabled) rule (below, line ~162) has
+   higher specificity (the :not() pseudo-class counts toward it) and was
+   silently winning on `background`, leaving this button's own `color:
+   var(--text)` sitting on the global rule's blue hover background
+   instead of this rule's own transparent one - a real, reported
+   white-text-on-blue contrast bug, not cosmetic. Applies to every
+   button-element hover override below with the same fix for the same
+   reason (conversation-item, help-popover-close/copy, tag,
+   doc-link-popover-item). */
+button.sidebar-section-header:hover {
   color: var(--text);
   background: transparent;
   box-shadow: none;
@@ -387,7 +417,7 @@ textarea:focus {
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.conversation-item:hover {
+button.conversation-item:hover {
   background: var(--surface-sunken);
 }
 
@@ -485,7 +515,7 @@ textarea:focus {
    the DevOps-only category/sub-tab structure moved into AdminDashboardPage
    itself (plain existing button styles there), not this dropdown. */
 .admin-menu-section-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -708,7 +738,7 @@ textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -970,7 +1000,7 @@ textarea:focus {
 }
 
 .adhoc-email-label {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -1071,7 +1101,7 @@ textarea:focus {
 
 .modal-card h2 {
   margin: 0 0 16px;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 /* 2026-10-18 - user-directed (4th report): the modal's own footprint must
@@ -1235,12 +1265,12 @@ textarea:focus {
 }
 
 .panel-success {
-  background: var(--accent-soft);
-  border-left-color: var(--accent);
+  background: var(--success-soft);
+  border-left-color: var(--success);
 }
 
 .panel-success .panel-eyebrow {
-  color: var(--accent-strong);
+  color: var(--success-strong);
 }
 
 .explainability-section {
@@ -1384,7 +1414,7 @@ textarea:focus {
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-contrast);
-  font-size: 10px;
+  font-size: 11px;
   font-family: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -1457,7 +1487,7 @@ textarea:focus {
   border-radius: 4px;
 }
 
-.help-popover-close:hover {
+button.help-popover-close:hover {
   background: var(--border);
   color: var(--text);
 }
@@ -1514,9 +1544,15 @@ textarea:focus {
   justify-content: center;
   padding: 5px;
   color: var(--text-muted);
+  /* 2026-10-20 - this never set its own background, so it was silently
+     inheriting the global button rule's solid --accent fill at rest, not
+     just on hover - a muted icon on a solid color square, clearly not
+     the intent for a minimal popover icon button. */
+  background: transparent;
+  border-color: transparent;
 }
 
-.help-popover-copy:hover {
+button.help-popover-copy:hover {
   color: var(--text);
 }
 
@@ -1604,7 +1640,7 @@ textarea:focus {
 }
 
 .explainability-card .eval-score-value {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   margin: 2px 0;
 }
@@ -1759,7 +1795,12 @@ textarea:focus {
   transition: all 0.15s ease;
 }
 
-.tag:hover {
+button.tag:hover {
+  /* background pinned explicitly, not just border-color - the global
+     button:hover rule also sets background/border-color, and without
+     this the tag's own --surface background was silently replaced by a
+     solid --accent-strong fill on hover instead of just a border highlight. */
+  background: var(--surface);
   border-color: var(--accent);
 }
 
@@ -1793,7 +1834,7 @@ textarea:focus {
 
 .leave-form-error {
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: 12px;
   margin: 4px 0 0;
 }
 
@@ -1905,7 +1946,7 @@ textarea:focus {
   border: 1px solid var(--accent);
   background: transparent;
   color: var(--accent);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -1947,11 +1988,11 @@ textarea:focus {
   border-radius: 4px;
   background: transparent;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 12px;
   cursor: pointer;
 }
 
-.doc-link-popover-item:hover {
+button.doc-link-popover-item:hover {
   background: var(--surface-sunken);
 }
 
@@ -1961,7 +2002,7 @@ textarea:focus {
   background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 12.5px;
+  font-size: 12px;
   /* 2026-10-18 - was --text-muted, which made real explanatory content
      (not just a caption) read dim/low-contrast. This is body text, full
      --text strength; --text-muted stays for genuinely secondary labels. */
@@ -2121,8 +2162,8 @@ textarea:focus {
    the same tokens as the badges above (also fixes the existing CI/Build
    Status tab's tables, which had no color for these values until now). */
 .status-badge.status-success {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  background: var(--success-soft);
+  color: var(--success-strong);
 }
 .status-badge.status-in_progress,
 .status-badge.status-queued,
@@ -2191,7 +2232,7 @@ textarea:focus {
   margin-bottom: 0;
 }
 .pipeline-job-label {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--text);
   margin: 0 0 6px;
@@ -2247,16 +2288,23 @@ textarea:focus {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px 20px;
 }
+/* 2026-10-20 - user-requested: status color (green/red/gray) stays on the
+   At-a-glance summary dots ONLY - every other box in this view, including
+   this banner, keeps a neutral mild-gray background now (border still
+   carries the status color, so pass/fail is still visible, just not as a
+   wash of color across every container). */
+.pipeline-banner.status-success,
+.pipeline-banner.status-failure,
+.pipeline-banner.status-in_progress {
+  background: var(--surface-sunken);
+}
 .pipeline-banner.status-success {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-strong);
+  border: 1px solid var(--success-strong);
 }
 .pipeline-banner.status-failure {
-  background: var(--danger-soft);
   border: 1px solid var(--danger);
 }
 .pipeline-banner.status-in_progress {
-  background: var(--info-soft);
   border: 1px solid var(--info);
 }
 .pipeline-banner-field {
@@ -2265,7 +2313,7 @@ textarea:focus {
   gap: 2px;
 }
 .pipeline-banner-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2303,15 +2351,34 @@ textarea:focus {
   --border-strong: #4a4738;
   --text: #f0efe6;
   --text-muted: #c2beae;
-  --accent: #6cb68c;
-  --accent-strong: #8ccba7;
-  --accent-soft: rgba(108, 182, 140, 0.14);
+  --accent: #8fb0d9;
+  --accent-strong: #a9c3e3;
+  --accent-soft: rgba(143, 176, 217, 0.14);
+  --success: #6cb68c;
+  --success-strong: #8ccba7;
+  --success-soft: rgba(108, 182, 140, 0.14);
   --info: #7badea;
   --info-soft: rgba(123, 173, 234, 0.14);
   --warning: #e3b05c;
   --warning-soft: rgba(227, 176, 92, 0.14);
   --danger: #ea9683;
   --danger-soft: rgba(234, 150, 131, 0.14);
+}
+
+/* 2026-10-20 - .status-badge is shared app-wide (documents, uploads, eval
+   runs all use it too) - scoped here, not changed globally, so only this
+   Pipeline view's badges lose their colored fill. Status color stays on
+   the At-a-glance summary dots only; every other box here (including this
+   badge) gets a flat mild-gray background, with the status color kept on
+   the text so pass/fail/running is still readable at a glance. */
+.pipeline-dashboard .status-badge.status-success,
+.pipeline-dashboard .status-badge.status-failure,
+.pipeline-dashboard .status-badge.status-cancelled,
+.pipeline-dashboard .status-badge.status-action_required,
+.pipeline-dashboard .status-badge.status-in_progress,
+.pipeline-dashboard .status-badge.status-queued,
+.pipeline-dashboard .status-badge.status-waiting {
+  background: var(--surface-sunken);
 }
 
 /* A left accent stripe per application, so switching the Application
@@ -2336,7 +2403,7 @@ textarea:focus {
 }
 .phase-bar-section-label {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -2374,8 +2441,8 @@ textarea:focus {
   background: var(--surface);
 }
 .phase-node-dot.status-success {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
+  background: var(--success-strong);
+  border-color: var(--success-strong);
 }
 .phase-node-dot.status-failure,
 .phase-node-dot.status-cancelled {
@@ -2392,7 +2459,7 @@ textarea:focus {
   border-color: var(--border);
 }
 .phase-node-label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   text-align: center;
@@ -2405,17 +2472,20 @@ textarea:focus {
   margin-top: 8px;
   min-width: 10px;
 }
+.pipeline-step.status-success,
+.pipeline-step.status-failure,
+.pipeline-step.status-cancelled,
+.pipeline-step.status-in_progress {
+  background: var(--surface-sunken);
+}
 .pipeline-step.status-success {
-  background: var(--accent-soft);
-  border-color: var(--accent-strong);
+  border-color: var(--success-strong);
 }
 .pipeline-step.status-failure,
 .pipeline-step.status-cancelled {
-  background: var(--danger-soft);
   border-color: var(--danger);
 }
 .pipeline-step.status-in_progress {
-  background: var(--info-soft);
   border-color: var(--info);
 }
 .pipeline-step.status-queued,
@@ -2427,10 +2497,10 @@ textarea:focus {
 }
 .pipeline-step-dur {
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 .pipeline-step a {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--info);
 }
 
@@ -2463,22 +2533,29 @@ textarea:focus {
   font-size: 11px;
   color: var(--text-muted);
 }
+/* 2026-10-20 - same "status color stays on the At-a-glance dots only" rule
+   applied here - background is a flat mild gray for all 4 bands, the
+   border + value text still carry the real color so good/warn/poor/capped
+   stay distinguishable without a wash of tinted fill on every tile. */
+.eval-gate-metric-good,
+.eval-gate-metric-warn,
+.eval-gate-metric-poor,
+.eval-gate-metric-capped {
+  background: var(--surface-sunken);
+}
 .eval-gate-metric-good {
-  background: var(--accent-soft);
-  border-color: var(--accent-strong);
+  border-color: var(--success-strong);
 }
 .eval-gate-metric-good .eval-gate-metric-value {
-  color: var(--accent-strong);
+  color: var(--success-strong);
 }
 .eval-gate-metric-warn {
-  background: var(--warning-soft);
   border-color: var(--warning);
 }
 .eval-gate-metric-warn .eval-gate-metric-value {
   color: var(--warning);
 }
 .eval-gate-metric-poor {
-  background: var(--danger-soft);
   border-color: var(--danger);
 }
 .eval-gate-metric-poor .eval-gate-metric-value {
@@ -2490,7 +2567,6 @@ textarea:focus {
    instead of red/"poor", so a number that's low by design doesn't read
    as a real problem at a glance. */
 .eval-gate-metric-capped {
-  background: var(--info-soft);
   border-color: var(--info);
 }
 .eval-gate-metric-capped .eval-gate-metric-value {
@@ -2529,7 +2605,7 @@ textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 .eval-gate-case-score.eval-gate-metric-good {
-  color: var(--accent-strong);
+  color: var(--success-strong);
 }
 .eval-gate-case-score.eval-gate-metric-warn {
   color: var(--warning);
@@ -2638,10 +2714,16 @@ textarea:focus {
    (same visual look, per the user's own ask) - tokens/classes prefixed
    "iqa-" so they never collide with this app's own --bg/--text/etc. */
 .iqa-wrap {
+  /* 2026-10-20 - accent/star realigned to the app's own new slate-blue
+     accent and success green (was purple/a different green, its own
+     isolated palette) - user-requested, "apply color schemes to all
+     interview FAQ pages as well." Neutrals (bg/surface/text/lead) left
+     as-is - this project's own deliberate separate iqa- theme, untouched
+     beyond the 2 colors that needed to match the rest of the app. */
   --iqa-bg: #f1f1f6; --iqa-surface: #ffffff; --iqa-surface-alt: #f5f5fa; --iqa-border: #dcdce6;
   --iqa-text: #181a24; --iqa-text-muted: #565c70; --iqa-text-faint: #888da0;
-  --iqa-accent: #3d3ca0; --iqa-accent-bg: #ebebf8; --iqa-accent-border: #cfcdee;
-  --iqa-star: #146b3f; --iqa-star-bg: #e3f6ea; --iqa-star-border: #b7e4c8;
+  --iqa-accent: #4a6fa5; --iqa-accent-bg: #e8eef6; --iqa-accent-border: #c3d2e5;
+  --iqa-star: #2f6f4f; --iqa-star-bg: #e6f1ea; --iqa-star-border: #b7dcc5;
   --iqa-lead: #9a5a0c; --iqa-lead-bg: #fbf1dd; --iqa-lead-border: #edd6a2;
   --iqa-shadow: 0 2px 4px rgba(15, 20, 30, 0.06), 0 10px 22px rgba(15, 20, 30, 0.07);
   --iqa-band: #23264a;
@@ -2653,8 +2735,8 @@ textarea:focus {
   :root:not([data-theme="light"]) .iqa-wrap {
     --iqa-bg: #0d0e16; --iqa-surface: #15161f; --iqa-surface-alt: #171924; --iqa-border: #292b3d;
     --iqa-text: #e8e9f0; --iqa-text-muted: #a6abbf; --iqa-text-faint: #6c7288;
-    --iqa-accent: #9c9bf0; --iqa-accent-bg: #201f3a; --iqa-accent-border: #38366a;
-    --iqa-star: #4fc989; --iqa-star-bg: #132a1e; --iqa-star-border: #204a32;
+    --iqa-accent: #8fb0d9; --iqa-accent-bg: #1c2636; --iqa-accent-border: #2f4258;
+    --iqa-star: #6cb68c; --iqa-star-bg: #132a1e; --iqa-star-border: #204a32;
     --iqa-lead: #e0ac48; --iqa-lead-bg: #2c2311; --iqa-lead-border: #4a3a17;
     --iqa-shadow: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 26px rgba(0, 0, 0, 0.4);
     --iqa-band: #1a1c38;
@@ -2663,8 +2745,8 @@ textarea:focus {
 :root[data-theme="dark"] .iqa-wrap {
   --iqa-bg: #0d0e16; --iqa-surface: #15161f; --iqa-surface-alt: #171924; --iqa-border: #292b3d;
   --iqa-text: #e8e9f0; --iqa-text-muted: #a6abbf; --iqa-text-faint: #6c7288;
-  --iqa-accent: #9c9bf0; --iqa-accent-bg: #201f3a; --iqa-accent-border: #38366a;
-  --iqa-star: #4fc989; --iqa-star-bg: #132a1e; --iqa-star-border: #204a32;
+  --iqa-accent: #8fb0d9; --iqa-accent-bg: #1c2636; --iqa-accent-border: #2f4258;
+  --iqa-star: #6cb68c; --iqa-star-bg: #132a1e; --iqa-star-border: #204a32;
   --iqa-lead: #e0ac48; --iqa-lead-bg: #2c2311; --iqa-lead-border: #4a3a17;
   --iqa-shadow: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 26px rgba(0, 0, 0, 0.4);
   --iqa-band: #1a1c38;
@@ -2698,14 +2780,14 @@ textarea:focus {
   gap: 6px;
 }
 .iqa-part-label {
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--iqa-text-faint);
   font-weight: 600;
 }
 .iqa-hint {
-  font-family: ui-monospace, monospace;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 13px;
   color: var(--iqa-accent);
   background: var(--iqa-accent-bg);
@@ -2744,7 +2826,7 @@ textarea:focus {
 }
 .iqa-star-box p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.55;
   color: var(--iqa-text);
 }
@@ -2769,7 +2851,7 @@ textarea:focus {
 .iqa-pitfalls {
   margin: 0;
   padding-left: 18px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--iqa-text);
   line-height: 1.6;
 }
@@ -2789,7 +2871,7 @@ table.iqa-kw-table td {
 }
 table.iqa-kw-table th {
   font-weight: 700;
-  font-size: 10.5px;
+  font-size: 11px;
   text-transform: uppercase;
   color: var(--iqa-text-faint);
 }

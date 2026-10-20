@@ -1172,6 +1172,38 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
               Deployment Dashboard, part 3 - a live read of this repo's own GitHub Actions runs. Read-only.
             </p>
 
+            {/* 2026-10-20 - user-requested: direct links to the external
+                provider dashboards this project actually uses, for
+                checking real usage/spend. Neither LangSmith nor Neon
+                expose a deep-linkable URL to one specific project/usage
+                page from this app's own config - both are login pages,
+                with the real project/index name shown next to the link
+                so it's clear what to look for once there. */}
+            <div style={{ marginBottom: 16, display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <span className="dev-note-inline">
+                <a href="https://smith.langchain.com" target="_blank" rel="noreferrer">
+                  LangSmith Dashboard
+                </a>{" "}
+                - projects <code>hrb_chatbot_v2_local</code> / <code>hrb_chatbot_v2_prod</code>
+              </span>
+              <span className="dev-note-inline">
+                <a href="https://console.neon.tech" target="_blank" rel="noreferrer">
+                  Neon Postgres Dashboard
+                </a>{" "}
+                - Monitoring tab, <code>HR_Benefits</code> project
+              </span>
+              <span className="dev-note-inline">
+                <a
+                  href="https://hrb-chatbot-ui.rvsree.dev/admin/open-doc?feature=deployment-guide&type=observability-howto"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Observability Doc
+                </a>{" "}
+                - how to actually check LangSmith/CloudWatch/Pinecone/Neon, step by step
+              </span>
+            </div>
+
             <div
               style={{
                 display: "flex",
