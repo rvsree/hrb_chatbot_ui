@@ -701,14 +701,24 @@ export interface WorkflowRunSummary {
   created_at: string;
 }
 
+// Phase 235 - workflow_file/display_name/total_count/has_more replace the
+// old fixed `ci`/`deploy` pair, which only ever fit backend's own 2
+// workflow files - a generic list so it naturally renders however many
+// workflow files the selected application actually has.
 export interface WorkflowStatus {
+  workflow_file: string;
+  display_name: string;
   runs: WorkflowRunSummary[];
+  total_count: number;
+  has_more: boolean;
   error: string | null;
 }
 
 export interface CiStatusResponse {
-  ci: WorkflowStatus;
-  deploy: WorkflowStatus;
+  application: Application;
+  page: number;
+  workflows: WorkflowStatus[];
+  error: string | null;
 }
 
 // Phase 184 - Deployment Dashboard's Live Metrics tab. No cost_usd field -
@@ -837,6 +847,29 @@ export interface PipelineWorkflowRun {
   created_at: string;
   jobs: PipelineJobDetail[];
 }
+
+// Phase 233 - which of this project's real deployables the Pipeline
+// stepper is showing. BACKEND/INGESTION_LAMBDA share one GitHub repo
+// (hrb_chatbot_v2) but are different workflow files/deploy targets;
+// LMS_MCP is a genuinely separate repo; FRONTEND has no GitHub Actions
+// workflow at all - deployed manually, shown as a plain message via the
+// existing `error` field, not a fabricated pipeline view.
+export type Application = "backend" | "ingestion_lambda" | "lms_mcp" | "frontend";
+
+// 2026-10-19 - user-requested rename, with 2 of the 4 adjusted from what
+// was asked: "RAG Search" for the backend and plain "RAG Ingestion" for
+// the Lambda would have implied a clean search/ingestion split across
+// the two that doesn't exist - the backend's own synchronous path is
+// still the PRIMARY way documents get indexed today, confirmed by
+// reading ai/doc_processing/pipeline.py; the Lambda is the async
+// alternative, not ingestion's only home. User confirmed these
+// alternatives after that was flagged.
+export const APPLICATION_LABELS: Record<Application, string> = {
+  backend: "HRB Chatbot Backend",
+  ingestion_lambda: "HRB Chatbot Async Ingestion",
+  lms_mcp: "HRB LMS MCP Server",
+  frontend: "HRB Chatbot UI",
+};
 
 export interface PipelineStatusResponse {
   head_sha: string;

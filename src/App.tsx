@@ -98,6 +98,19 @@ function AppRoutes() {
           </RequireIdentity>
         }
       />
+      {/* 2026-10-19 - a genuinely separate menu item, not a deep-link into
+          the full Admin Dashboard - standaloneCategory hides the category
+          picker entirely, so there's nothing here but Build & Deployment's
+          own 3 sub-tabs. Reuses AdminDashboardPage's own component/state
+          logic (low-risk), not a duplicated page. */}
+      <Route
+        path="/deployments"
+        element={
+          <RequireIdentity>
+            <AdminDashboardPage standaloneCategory="build-deploy" />
+          </RequireIdentity>
+        }
+      />
       <Route
         path="/admin/reset-secret-code"
         element={

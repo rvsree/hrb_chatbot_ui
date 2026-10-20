@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ApiRequestError,
@@ -32,9 +32,11 @@ import DocumentsPage from "./DocumentsPage";
 import UploadPage from "./UploadPage";
 import { useIdentity } from "../context/IdentityContext";
 import {
+  APPLICATION_LABELS,
   LEAVE_TYPE_LABELS,
   type AdminConversationSummary,
   type AdminDocSummary,
+  type Application,
   type CiStatusResponse,
   type EvalRunDetail,
   type EvalRunSummary,
@@ -153,7 +155,20 @@ const METRIC_RECOMMENDATIONS: Record<string, string> = {
     "A rising error rate is worth checking against BACKLOG.md's \"Output guardrail false positive\" entry (a real false-positive found live, e.g. \"Roth\" masked as a name) before assuming the underlying pipeline itself is broken.",
 };
 
-export default function AdminDashboardPage() {
+// 2026-10-19 - standaloneCategory (Phase 233 follow-up, user-reported):
+// the earlier "new route, same component" fix only pre-selected a
+// category inside the full Admin Dashboard - every other category
+// (Admin/HR Ops/Interview Q&A) was still right there to switch to,
+// which isn't what "its own separate menu, outside Admin Dashboard"
+// actually asked for. When set, this locks the page to exactly one
+// category: the category picker row never renders at all, so there's
+// nothing to switch away to - genuine separation, not a shortcut into
+// the same shared page.
+interface AdminDashboardPageProps {
+  standaloneCategory?: AdminCategory;
+}
+
+export default function AdminDashboardPage({ standaloneCategory }: AdminDashboardPageProps = {}) {
   const { identity } = useIdentity();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -165,9 +180,13 @@ export default function AdminDashboardPage() {
   // is derived from the deep-linked tab, so a shortcut still lands on the
   // right category/sub-tab pair, not just the right sub-tab in isolation.
   const requestedTab = searchParams.get("tab");
-  const initialTab: AdminTab = ADMIN_TAB_KEYS.includes(requestedTab as AdminTab) ? (requestedTab as AdminTab) : "documents";
+  const initialTab: AdminTab = standaloneCategory
+    ? CATEGORY_TABS[standaloneCategory][0]
+    : ADMIN_TAB_KEYS.includes(requestedTab as AdminTab)
+      ? (requestedTab as AdminTab)
+      : "documents";
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
-  const [activeCategory, setActiveCategory] = useState<AdminCategory>(categoryForTab(initialTab));
+  const [activeCategory, setActiveCategory] = useState<AdminCategory>(standaloneCategory ?? categoryForTab(initialTab));
   const [searchQuery, setSearchQuery] = useState("");
   const [conversations, setConversations] = useState<AdminConversationSummary[]>([]);
   const [feedback, setFeedback] = useState<FeedbackRecord[]>([]);
@@ -176,6 +195,11 @@ export default function AdminDashboardPage() {
   const [goldenDatasetCases, setGoldenDatasetCases] = useState<GoldenDatasetCaseSummary[]>([]);
   const [evalRuns, setEvalRuns] = useState<EvalRunSummary[]>([]);
   const [ciStatus, setCiStatus] = useState<CiStatusResponse | null>(null);
+  const [ciStatusError, setCiStatusError] = useState<string | null>(null);
+  // Phase 235 - "Full run history" grid's own page, reset to 1 whenever
+  // selectedApplication changes (handleSelectApplication below) - a page
+  // number from one application's run list isn't meaningful for another's.
+  const [ciStatusPage, setCiStatusPage] = useState(1);
   const [metricsRows, setMetricsRows] = useState<PipelineMetricsRow[]>([]);
   const [metricsWindowHours, setMetricsWindowHours] = useState(24);
   const [interviewQaCards, setInterviewQaCards] = useState<InterviewQaCard[]>([]);
@@ -186,8 +210,18 @@ export default function AdminDashboardPage() {
   const [interviewQaDeleteError, setInterviewQaDeleteError] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatusResponse | null>(null);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
+  // Phase 237 - per-query scores for the golden dataset gate shown in the
+  // Pipeline tab - the same EvalRunDetail shape the Eval Runs tab's own
+  // row-click modal already fetches, reused rather than a new endpoint.
+  const [evalGateCaseDetail, setEvalGateCaseDetail] = useState<EvalRunDetail | null>(null);
+  const [evalGateCaseDetailError, setEvalGateCaseDetailError] = useState<string | null>(null);
   const [pipelineSnapshots, setPipelineSnapshots] = useState<PipelineSnapshotSummary[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | "live">("live");
+  // Phase 233 - which real deployable the Pipeline tab is showing.
+  // Snapshot history (persist-on-read) stays BACKEND-only on the backend
+  // side, so switching away from "backend" always forces "live" too -
+  // there's no stored history for the others to view.
+  const [selectedApplication, setSelectedApplication] = useState<Application>("backend");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -217,27 +251,46 @@ export default function AdminDashboardPage() {
   // Phase 188 - the Pipeline stepper fetches on its own, separately from
   // the shared refresh() above (it can mean several GitHub API calls per
   // fetch, so it only runs while this one tab is actually open). Polls
-  // every 10s by self-rescheduling only while a run is still in_progress/
-  // queued - stops rescheduling once everything's terminal. Phase 189 -
-  // only polls the *live* view; viewing a past snapshot (selectedSnapshotId
-  // !== "live") pauses this so the picked history isn't overwritten.
+  // every 10s by self-rescheduling while a run is still in_progress/
+  // queued. Phase 189 - only polls the *live* view; viewing a past
+  // snapshot (selectedSnapshotId !== "live") pauses this so the picked
+  // history isn't overwritten.
+  //
+  // 2026-10-19 - real bug fix, not a redesign: this used to stop
+  // rescheduling outright once everything went terminal - so if you
+  // watched a develop push's ci.yml finish, then later merged into
+  // master (a real, separate event, often minutes later), this view had
+  // already given up and would show the finished develop run forever,
+  // never noticing deploy.yml's run even started. Now it keeps a slower
+  // background watch going (25s) comparing head_sha - a genuinely new
+  // commit's run (detected by a different head_sha) always resumes the
+  // fast 10s cadence immediately, same as if it had been running from
+  // the start. Only truly stops when this effect's own cleanup runs
+  // (tab closed, or the admin switches to a history snapshot).
+  //
+  // Phase 233 - selectedApplication added to the dependency array so
+  // switching the new Application dropdown re-fetches immediately with
+  // its own fresh lastSeenSha (a different application's head_sha isn't
+  // comparable to the previous one's at all - every switch is treated
+  // as a brand-new view, same as the effect's own initial mount).
   useEffect(() => {
     if (!identity || identity.role !== "admin" || activeTab !== "ci-status" || selectedSnapshotId !== "live") {
       return;
     }
     let cancelled = false;
     let timeoutId: number | undefined;
+    let lastSeenSha: string | null = null;
 
     async function fetchPipeline() {
       try {
-        const result = await getPipelineStatus(identity!);
+        const result = await getPipelineStatus(identity!, undefined, selectedApplication);
         if (cancelled) return;
         setPipelineStatus(result);
         setPipelineError(null);
         const stillRunning = result.runs.some((run) => run.status === "in_progress" || run.status === "queued");
-        if (stillRunning) {
-          timeoutId = window.setTimeout(fetchPipeline, 10000);
-        }
+        const isNewCommit = lastSeenSha !== null && result.head_sha !== lastSeenSha;
+        lastSeenSha = result.head_sha;
+        timeoutId = window.setTimeout(fetchPipeline, stillRunning || isNewCommit ? 10000 : 25000);
       } catch (err) {
         if (cancelled) return;
         setPipelineError(err instanceof ApiRequestError ? err.message : "Could not load pipeline status.");
@@ -253,7 +306,36 @@ export default function AdminDashboardPage() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, activeTab, selectedSnapshotId]);
+  }, [identity, activeTab, selectedSnapshotId, selectedApplication]);
+
+  // Phase 237 - the golden dataset gate's own per-query breakdown, fetched
+  // only once the Pipeline stepper's own fetch above has resolved an
+  // eval_gate with a real id (`backend` only - the gate card itself is
+  // already backend-only, Phase 236). Reuses getEvalRun(), the exact same
+  // call the Eval Runs tab's row-click modal already makes - no new
+  // endpoint, no new backend code.
+  const evalGateId = pipelineStatus?.eval_gate?.id ?? null;
+  useEffect(() => {
+    if (!identity || identity.role !== "admin" || activeTab !== "ci-status" || selectedApplication !== "backend" || !evalGateId) {
+      setEvalGateCaseDetail(null);
+      return;
+    }
+    let cancelled = false;
+    getEvalRun(identity, evalGateId)
+      .then((detail) => {
+        if (cancelled) return;
+        setEvalGateCaseDetail(detail);
+        setEvalGateCaseDetailError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setEvalGateCaseDetailError(err instanceof ApiRequestError ? err.message : "Could not load per-query scores.");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity, activeTab, selectedApplication, evalGateId]);
 
   // Phase 189 - the run picker's own list, fetched once per tab-open (not
   // polled - history doesn't change as fast as a live run's own status).
@@ -269,6 +351,51 @@ export default function AdminDashboardPage() {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, activeTab]);
+
+  // Phase 235 - "Full run history" grid's own fetch, now re-scoped by
+  // selectedApplication/ciStatusPage - pulled out of the page's one big
+  // Promise.allSettled load (which only ever ran once per mount) since
+  // this now needs to re-fetch independently on every application/page
+  // change, same reasoning as the Pipeline stepper's own dedicated effect
+  // above. Not polled - run history doesn't change fast enough to need it.
+  //
+  // 2026-10-19 - user-reported: paging forward, switching to another tab,
+  // then back to CI/CD Pipeline silently kept whatever page number was
+  // left over from before (ciStatusPage only ever reset on an Application
+  // switch, never on simply re-opening this tab) - felt like "it just
+  // keeps increasing" across a session even though no single click caused
+  // it. wasOnCiStatusTab tracks whether the PREVIOUS render already had
+  // this tab open, so a fresh visit always fetches/shows page 1, while
+  // Next/Previous clicks within one visit (activeTab staying "ci-status"
+  // the whole time) still page normally.
+  const wasOnCiStatusTabRef = useRef(false);
+  useEffect(() => {
+    if (!identity || identity.role !== "admin" || activeTab !== "ci-status") {
+      wasOnCiStatusTabRef.current = false;
+      return;
+    }
+    const freshlyOpened = !wasOnCiStatusTabRef.current;
+    wasOnCiStatusTabRef.current = true;
+    const pageToFetch = freshlyOpened ? 1 : ciStatusPage;
+    if (freshlyOpened && ciStatusPage !== 1) {
+      setCiStatusPage(1);
+    }
+    let cancelled = false;
+    getCiStatus(identity, selectedApplication, pageToFetch)
+      .then((result) => {
+        if (cancelled) return;
+        setCiStatus(result);
+        setCiStatusError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCiStatusError(err instanceof ApiRequestError ? err.message : "Could not load CI status.");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity, activeTab, selectedApplication, ciStatusPage]);
 
   if (!identity) {
     navigate("/login");
@@ -312,7 +439,6 @@ export default function AdminDashboardPage() {
     // otherwise 403 and surface a confusing error for a tab that isn't
     // even shown to them.
     const isEngineeringAdmin = currentIdentity.role === "admin";
-    const emptyCiStatus: CiStatusResponse = { ci: { runs: [], error: null }, deploy: { runs: [], error: null } };
     const [
       conversationsResult,
       feedbackResult,
@@ -320,7 +446,6 @@ export default function AdminDashboardPage() {
       docsResult,
       goldenDatasetResult,
       evalRunsResult,
-      ciStatusResult,
       metricsResult,
       interviewQaResult,
     ] = await Promise.allSettled([
@@ -330,7 +455,6 @@ export default function AdminDashboardPage() {
       isEngineeringAdmin ? listAdminDocs(currentIdentity) : Promise.resolve({ count: 0, docs: [] }),
       isEngineeringAdmin ? listGoldenDataset(currentIdentity) : Promise.resolve({ count: 0, cases: [] }),
       isEngineeringAdmin ? listEvalRuns(currentIdentity) : Promise.resolve({ count: 0, runs: [] }),
-      isEngineeringAdmin ? getCiStatus(currentIdentity) : Promise.resolve(emptyCiStatus),
       isEngineeringAdmin
         ? getRequestMetrics(currentIdentity, metricsWindowHours)
         : Promise.resolve({ window_hours: metricsWindowHours, rows: [] }),
@@ -352,9 +476,6 @@ export default function AdminDashboardPage() {
     if (goldenDatasetResult.status === "fulfilled") {
       setGoldenDatasetCases(goldenDatasetResult.value.cases);
     }
-    if (ciStatusResult.status === "fulfilled") {
-      setCiStatus(ciStatusResult.value);
-    }
     if (evalRunsResult.status === "fulfilled") {
       setEvalRuns(evalRunsResult.value.runs);
     }
@@ -372,7 +493,6 @@ export default function AdminDashboardPage() {
       failureMessage("architecture docs", docsResult),
       failureMessage("golden dataset", goldenDatasetResult),
       failureMessage("eval runs", evalRunsResult),
-      failureMessage("CI status", ciStatusResult),
       failureMessage("live metrics", metricsResult),
       failureMessage("interview Q&A", interviewQaResult),
     ].filter((message): message is string => message !== null);
@@ -428,6 +548,16 @@ export default function AdminDashboardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity]);
+
+  // Phase 233 - switching applications always forces "live": stored
+  // snapshot history is backend-only (see the backend's own Phase 233
+  // note on pipeline_runs' schema), so a picked snapshot would otherwise
+  // keep showing stale backend data under a different application label.
+  function handleSelectApplication(value: Application) {
+    setSelectedApplication(value);
+    setSelectedSnapshotId("live");
+    setCiStatusPage(1);
+  }
 
   async function handleSelectSnapshot(value: string) {
     if (value === "live") {
@@ -553,12 +683,24 @@ export default function AdminDashboardPage() {
   const showSharedSearchBar =
     activeTab !== "documents" && activeTab !== "upload" && activeTab !== "ci-status" && activeTab !== "live-metrics";
 
-  function renderWorkflowStatus(workflowFile: string, status: WorkflowStatus) {
+  function renderWorkflowStatus(status: WorkflowStatus) {
     return (
       <div style={{ marginBottom: 16 }}>
-        <h3 style={{ fontSize: 14, marginBottom: 8 }}>{workflowFile}</h3>
+        <h3 style={{ fontSize: 14, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+          {status.display_name}
+          <HelpPopover label={`What file is "${status.display_name}"?`}>
+            <p>This is GitHub Actions' own workflow file: <code>{status.workflow_file}</code>.</p>
+          </HelpPopover>
+        </h3>
         {status.error && <p className="error-banner">{status.error}</p>}
-        {!status.error && status.runs.length === 0 && <p className="dev-note-inline">No runs found.</p>}
+        {/* 2026-10-19 - the shared ciStatusPage can legitimately run past
+            THIS workflow's own last page while a different workflow in
+            the same grid still has more (e.g. ci.yml runs far more often
+            than deploy.yml) - "No runs on this page" instead of "No runs
+            found" makes clear that's expected, not an empty workflow. */}
+        {!status.error && status.runs.length === 0 && (
+          <p className="dev-note-inline">{ciStatusPage > 1 ? "No runs on this page." : "No runs found."}</p>
+        )}
         {status.runs.length > 0 && (
           <div className="documents-table-scroll admin-dashboard-table-scroll">
             <table className="documents-table">
@@ -595,6 +737,7 @@ export default function AdminDashboardPage() {
             </table>
           </div>
         )}
+        {!status.error && <p className="dev-note-inline">{status.total_count} total run(s).</p>}
       </div>
     );
   }
@@ -602,24 +745,39 @@ export default function AdminDashboardPage() {
   return (
     <div className="centered-page">
       <div className="card documents-card">
-        <h1>Admin dashboard</h1>
+        <h1>{standaloneCategory ? CATEGORY_LABELS[standaloneCategory] : "Admin dashboard"}</h1>
         <p>
-          <Link to="/chat">Back to chat</Link> &middot; <Link to="/admin/reset-secret-code">Change secret code</Link>
+          <Link to="/chat">Back to chat</Link>
+          {standaloneCategory ? (
+            <>
+              {" "}
+              &middot; <Link to="/admin">Admin dashboard</Link>
+            </>
+          ) : (
+            <>
+              {" "}
+              &middot; <Link to="/admin/reset-secret-code">Change secret code</Link>
+            </>
+          )}
         </p>
-        <p className="dev-note">Click a row to view full detail, or check rows for bulk delete. Deletes are permanent.</p>
+        {!standaloneCategory && (
+          <p className="dev-note">Click a row to view full detail, or check rows for bulk delete. Deletes are permanent.</p>
+        )}
 
-        <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 18 }}>
-          {visibleCategories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              className={activeCategory === category ? undefined : "secondary"}
-              onClick={() => handleSelectCategory(category)}
-            >
-              {CATEGORY_LABELS[category]}
-            </button>
-          ))}
-        </div>
+        {!standaloneCategory && (
+          <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 18 }}>
+            {visibleCategories.map((category) => (
+              <button
+                key={category}
+                type="button"
+                className={activeCategory === category ? undefined : "secondary"}
+                onClick={() => handleSelectCategory(category)}
+              >
+                {CATEGORY_LABELS[category]}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 20 }}>
           {visibleTabs.map((tab) => (
@@ -1008,7 +1166,7 @@ export default function AdminDashboardPage() {
           </>
         )}
 
-        {!isLoading && activeTab === "ci-status" && ciStatus && (
+        {!isLoading && activeTab === "ci-status" && (
           <>
             <p className="dev-note-inline" style={{ marginBottom: 16 }}>
               Deployment Dashboard, part 3 - a live read of this repo's own GitHub Actions runs. Read-only.
@@ -1017,26 +1175,52 @@ export default function AdminDashboardPage() {
             <div
               style={{
                 display: "flex",
-                justifyContent: "space-between",
+                // 2026-10-19 - user-requested: flex-start, not flex-end -
+                // the Application dropdown stays pinned to the left
+                // regardless of whether the Viewing dropdown next to it
+                // is showing (backend only) or not, instead of the whole
+                // row's position shifting with flex-end as that second
+                // control appears/disappears.
+                justifyContent: "flex-start",
                 alignItems: "baseline",
                 flexWrap: "wrap",
                 gap: 8,
                 marginBottom: 16,
               }}
             >
-              <h3 style={{ fontSize: 14, margin: 0 }}>Pipeline</h3>
-              <label style={{ fontSize: 12 }}>
-                Viewing:{" "}
-                <select value={String(selectedSnapshotId)} onChange={(e) => handleSelectSnapshot(e.target.value)}>
-                  <option value="live">Live (latest commit)</option>
-                  {pipelineSnapshots.map((snapshot) => (
-                    <option key={snapshot.id} value={snapshot.id}>
-                      {snapshot.head_sha.slice(0, 7)} - {new Date(snapshot.captured_at).toLocaleString()}
-                      {snapshot.head_commit_message ? ` - ${snapshot.head_commit_message.slice(0, 40)}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+                {/* Phase 233 - dropdown, not child tabs (user-requested,
+                    deliberate choice): scales to more applications later
+                    without the tab row wrapping/scrolling, same pattern
+                    as the "Viewing" selector right next to it. */}
+                <label style={{ fontSize: 12 }}>
+                  Application:{" "}
+                  <select
+                    value={selectedApplication}
+                    onChange={(e) => handleSelectApplication(e.target.value as Application)}
+                  >
+                    {(Object.keys(APPLICATION_LABELS) as Application[]).map((app) => (
+                      <option key={app} value={app}>
+                        {APPLICATION_LABELS[app]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedApplication === "backend" && (
+                  <label style={{ fontSize: 12 }}>
+                    Viewing:{" "}
+                    <select value={String(selectedSnapshotId)} onChange={(e) => handleSelectSnapshot(e.target.value)}>
+                      <option value="live">Live (latest commit)</option>
+                      {pipelineSnapshots.map((snapshot) => (
+                        <option key={snapshot.id} value={snapshot.id}>
+                          {snapshot.head_sha.slice(0, 7)} - {new Date(snapshot.captured_at).toLocaleString()}
+                          {snapshot.head_commit_message ? ` - ${snapshot.head_commit_message.slice(0, 40)}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
             </div>
             {selectedSnapshotId !== "live" && (
               <p className="dev-note-inline" style={{ marginBottom: 16 }}>
@@ -1046,12 +1230,64 @@ export default function AdminDashboardPage() {
               </p>
             )}
             {pipelineError && <p className="error-banner">{pipelineError}</p>}
-            {!pipelineError && pipelineStatus && <PipelineStepper pipeline={pipelineStatus} />}
+            {!pipelineError && pipelineStatus && (
+              <PipelineStepper
+                pipeline={pipelineStatus}
+                application={selectedApplication}
+                evalGateCaseDetail={evalGateCaseDetail}
+                evalGateCaseDetailError={evalGateCaseDetailError}
+                goldenDatasetCases={goldenDatasetCases}
+              />
+            )}
             {!pipelineError && !pipelineStatus && <p className="dev-note-inline">Loading pipeline...</p>}
 
-            <h3 style={{ fontSize: 14, margin: "20px 0 8px" }}>Full run history</h3>
-            {renderWorkflowStatus("ci.yml", ciStatus.ci)}
-            {renderWorkflowStatus("deploy.yml", ciStatus.deploy)}
+            {/* Phase 235 - now genuinely scoped by the same Application
+                dropdown as the Pipeline stepper above it (was previously
+                just hidden for every application except backend, a
+                stopgap - see RAG-ROADMAP.md Phase 235).
+                2026-10-19 - the whole section (heading included) is now
+                hidden for `frontend` specifically: the Pipeline section
+                above already shows its own honest "no automated CI/CD"
+                message via PipelineStepper, so repeating the identical
+                sentence a second time under an otherwise-empty "Full run
+                history" heading was pure duplication, not new
+                information - user-reported. */}
+            {selectedApplication !== "frontend" && (
+              <>
+                <h3 style={{ fontSize: 14, margin: "32px 0 12px", paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                  Full run history
+                </h3>
+                {ciStatusError && <p className="error-banner">{ciStatusError}</p>}
+                {!ciStatusError && ciStatus && ciStatus.error && <p className="dev-note-inline">{ciStatus.error}</p>}
+                {!ciStatusError && ciStatus && !ciStatus.error && (
+                  <>
+                    {ciStatus.workflows.map((workflow) => (
+                      <Fragment key={workflow.workflow_file}>{renderWorkflowStatus(workflow)}</Fragment>
+                    ))}
+                    {(ciStatusPage > 1 || ciStatus.workflows.some((workflow) => workflow.has_more)) && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                        <button
+                          className="button-secondary"
+                          disabled={ciStatusPage <= 1}
+                          onClick={() => setCiStatusPage((page) => Math.max(1, page - 1))}
+                        >
+                          Previous
+                        </button>
+                        <span className="dev-note-inline">Page {ciStatusPage}</span>
+                        <button
+                          className="button-secondary"
+                          disabled={!ciStatus.workflows.some((workflow) => workflow.has_more)}
+                          onClick={() => setCiStatusPage((page) => page + 1)}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+                {!ciStatusError && !ciStatus && <p className="dev-note-inline">Loading run history...</p>}
+              </>
+            )}
           </>
         )}
 

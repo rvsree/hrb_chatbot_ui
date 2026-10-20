@@ -1,5 +1,6 @@
 import type {
   AdhocDocumentChatResponse,
+  Application,
   AdhocSessionDetailResponse,
   AdhocSessionListResponse,
   AdminConversationListResponse,
@@ -872,12 +873,24 @@ export async function getEvalRun(userProfile: UserProfile, runId: number): Promi
   return (await response.json()) as EvalRunDetail;
 }
 
-export async function getCiStatus(userProfile: UserProfile): Promise<CiStatusResponse> {
+export async function getCiStatus(
+  userProfile: UserProfile,
+  application?: Application,
+  page?: number,
+): Promise<CiStatusResponse> {
   const params = new URLSearchParams({
     employee_id: userProfile.employee_id,
     full_name: userProfile.full_name,
     role: userProfile.role,
   });
+  // Phase 235 - both omitted entirely when not given, so the backend's
+  // own defaults (BACKEND, page 1) apply - same as before these existed.
+  if (application) {
+    params.set("application", application);
+  }
+  if (page) {
+    params.set("page", String(page));
+  }
   const response = await fetch(`${API_BASE_URL}/v1/admin/ci-status?${params.toString()}`);
 
   if (!response.ok) {
@@ -889,7 +902,11 @@ export async function getCiStatus(userProfile: UserProfile): Promise<CiStatusRes
 // Phase 188 - one commit's full pipeline (every workflow file that ran for
 // it, stitched together, plus its nearest eval-gate result). sha omitted
 // defaults to the most recently run commit.
-export async function getPipelineStatus(userProfile: UserProfile, sha?: string): Promise<PipelineStatusResponse> {
+export async function getPipelineStatus(
+  userProfile: UserProfile,
+  sha?: string,
+  application?: Application,
+): Promise<PipelineStatusResponse> {
   const params = new URLSearchParams({
     employee_id: userProfile.employee_id,
     full_name: userProfile.full_name,
@@ -897,6 +914,11 @@ export async function getPipelineStatus(userProfile: UserProfile, sha?: string):
   });
   if (sha) {
     params.set("sha", sha);
+  }
+  // Phase 233 - omitted entirely when not given, so the backend's own
+  // default (BACKEND) applies - same as before this param existed.
+  if (application) {
+    params.set("application", application);
   }
   const response = await fetch(`${API_BASE_URL}/v1/admin/ci-status/pipeline?${params.toString()}`);
 

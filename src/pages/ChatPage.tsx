@@ -1197,7 +1197,21 @@ export default function ChatPage() {
                       ?tab= resolution, and the dashboard's own category +
                       sub-tab bar replaces what this dropdown used to
                       enumerate. Admin (employee_admin) never saw these
-                      anyway, matching the backend's own ADMIN-only gate. */}
+                      anyway, matching the backend's own ADMIN-only gate.
+                      2026-10-19 - one exception restored: Build &
+                      Deployment gets its own direct link again
+                      (user-requested), to a genuinely separate route
+                      (/deployments, standaloneCategory="build-deploy" -
+                      not a ?tab= deep-link into the shared dashboard,
+                      which still showed every other category's own
+                      picker) - admin-only, matching DEVOPS_ONLY_CATEGORIES'
+                      own existing restriction (employee_admin never saw
+                      this category either way). */}
+                  {identity.role === "admin" && (
+                    <Link to="/deployments" className="admin-menu-item" onClick={() => setIsAdminMenuOpen(false)}>
+                      Build &amp; Deployment
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
