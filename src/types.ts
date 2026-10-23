@@ -270,7 +270,7 @@ export interface AdhocSessionDetailResponse {
   turns: AdhocSessionTurn[];
 }
 
-export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
+export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag" | "auto-agentic-rag";
 
 // Matches common/enums.py::SearchStrategy (Phase 131 added keyword/hybrid).
 // "similarity" is plain vector search, "mmr" trades some relevance for less
@@ -278,7 +278,10 @@ export type ChatMode = "genai-rag" | "single-agentic-rag" | "multi-agentic-rag";
 // "keyword" and "similarity" via Reciprocal Rank Fusion.
 // Phase 218 - "knn" added: exact, brute-force cosine search, computed
 // directly rather than approximated by either backend's own HNSW index.
-export type SearchStrategy = "similarity" | "mmr" | "keyword" | "hybrid" | "knn";
+// Phase 252 - "dynamic" added: auto-picks one of the above per query
+// server-side (dynamic_strategy_selector.py); the response's own
+// retrieval.search_strategy always reports the resolved real value.
+export type SearchStrategy = "similarity" | "mmr" | "keyword" | "hybrid" | "knn" | "dynamic";
 
 // Phase 228 - narrower than SearchStrategy above on purpose:
 // search_knowledge_base() (the tool both single-agentic-rag and multi-
@@ -299,6 +302,16 @@ export interface EvalRequestOptions {
   judgeModel?: string;
   evalScoreThreshold?: number;
   agentSearchStrategy?: AgentSearchStrategy;
+  // Phase 243 - multi-agentic-rag only (classification_options.planner_model);
+  // AgenticRagRequest (single-agentic-rag) has no classification_options
+  // field at all, so client.ts's askAgenticQuery never sends this - shared
+  // on this interface only because askAgenticQuery/askMultiAgenticQuery
+  // already share EvalRequestOptions as a whole, same as agentSearchStrategy above.
+  plannerModel?: string;
+  // Phase 244 - applies identically to all 3 modes (unlike plannerModel above) -
+  // guardrails run on every pipeline, so this is genuinely shared, not just
+  // co-located on this interface for convenience.
+  guardrailsModel?: string;
 }
 
 export interface GenaiRagOptions extends EvalRequestOptions {
@@ -311,6 +324,8 @@ export interface GenaiRagOptions extends EvalRequestOptions {
   // first retrieval's own live precision is below evalScoreThreshold.
   // No-op without evalScoreThreshold set.
   enableCorrectiveRetry?: boolean;
+  // Phase 243 - genai-rag only (classification_options.decompose_model).
+  decomposeModel?: string;
 }
 
 // tool_type: Phase 126 - which kind of backend this call hit. Not a closed
@@ -348,6 +363,9 @@ export interface ChatMessage {
   toolsUsed?: ToolCallInfo[];
   iterations?: number;
   tasks?: AgentTaskInfo[];
+  // Phase 240 - set only for an "Auto" mode turn, naming which of
+  // single-/multi-agentic-rag was actually picked (or escalated to).
+  resolvedMode?: "single-agentic-rag" | "multi-agentic-rag";
   explainability?: ExplainabilityInfo;
   retrievalInfo?: RetrievalInfo;
   // Phase 223 - the Eval Score Threshold actually sent with this request
@@ -576,6 +594,9 @@ export interface AgenticRagResponse {
   iterations: number;
   explainability_info: ExplainabilityInfo;
   conversation_id: string | null;
+  // Phase 240 - set only when returned from POST /v1/rag-retrieval/query
+  // (the auto-router). Null/absent on this model's own direct, forced-mode endpoint.
+  resolved_mode?: "single-agentic-rag" | "multi-agentic-rag" | null;
 }
 
 export interface MultiAgenticRagResponse {
@@ -587,6 +608,9 @@ export interface MultiAgenticRagResponse {
   iterations: number;
   explainability_info: ExplainabilityInfo;
   conversation_id: string | null;
+  // Phase 240 - set only when returned from POST /v1/rag-retrieval/query
+  // (the auto-router, including an escalation from single-agentic-rag).
+  resolved_mode?: "single-agentic-rag" | "multi-agentic-rag" | null;
 }
 
 // Phase 168 - admin dashboard (view + hard-delete across KB documents,

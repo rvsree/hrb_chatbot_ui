@@ -178,6 +178,10 @@ export async function askQuery(
         options && (options.judgeModel || options.evalScoreThreshold !== undefined)
           ? { judge_model: options.judgeModel, eval_score_threshold: options.evalScoreThreshold }
           : undefined,
+      // Phase 243 - genai-rag only.
+      classification_options: options?.decomposeModel ? { decompose_model: options.decomposeModel } : undefined,
+      // Phase 244 - shared across all 3 modes, top-level (not nested).
+      guardrails_model: options?.guardrailsModel || undefined,
     }),
   });
 
@@ -206,6 +210,8 @@ export async function askAgenticQuery(
         options && (options.judgeModel || options.evalScoreThreshold !== undefined)
           ? { judge_model: options.judgeModel, eval_score_threshold: options.evalScoreThreshold }
           : undefined,
+      // Phase 244 - shared across all 3 modes, top-level (not nested).
+      guardrails_model: options?.guardrailsModel || undefined,
     }),
   });
 
@@ -213,6 +219,39 @@ export async function askAgenticQuery(
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as AgenticRagResponse;
+}
+
+// Phase 240 - the auto-router. Same request shape as askAgenticQuery (the
+// router's job is picking a pipeline, not a new request shape) - response
+// is whichever shape the resolved pipeline actually returns, discriminated
+// by its own resolved_mode field.
+export async function askAutoRoutedQuery(
+  userProfile: UserProfile,
+  query: string,
+  conversationId: string | null,
+  options?: EvalRequestOptions,
+): Promise<AgenticRagResponse | MultiAgenticRagResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/rag-retrieval/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_profile: userProfile,
+      query,
+      enable_conversation_memory: true,
+      conversation_id: conversationId,
+      search_strategy: options?.agentSearchStrategy,
+      eval_options:
+        options && (options.judgeModel || options.evalScoreThreshold !== undefined)
+          ? { judge_model: options.judgeModel, eval_score_threshold: options.evalScoreThreshold }
+          : undefined,
+      guardrails_model: options?.guardrailsModel || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AgenticRagResponse | MultiAgenticRagResponse;
 }
 
 export async function askMultiAgenticQuery(
@@ -234,6 +273,11 @@ export async function askMultiAgenticQuery(
         options && (options.judgeModel || options.evalScoreThreshold !== undefined)
           ? { judge_model: options.judgeModel, eval_score_threshold: options.evalScoreThreshold }
           : undefined,
+      // Phase 243 - multi-agentic-rag only; AgenticRagRequest has no
+      // classification_options field, so askAgenticQuery never sends this.
+      classification_options: options?.plannerModel ? { planner_model: options.plannerModel } : undefined,
+      // Phase 244 - shared across all 3 modes, top-level (not nested).
+      guardrails_model: options?.guardrailsModel || undefined,
     }),
   });
 
@@ -985,13 +1029,39 @@ export async function getAdminDocContent(userProfile: UserProfile, docId: number
   return (await response.json()) as AdminDocContentResponse;
 }
 
-export async function getHealth(): Promise<{ embedding_model: string }> {
-  const response = await fetch(`${API_BASE_URL}/health`);
+// Phase 7 (hrb_api_gateway_service) - /health's shape now differs depending on
+// whether API_BASE_URL points at the backend directly (today's production
+// default - the Gateway's own Phase 5 cutover hasn't happened yet) or at the
+// Gateway (this session's local dev setup): the backend's own /health has
+// embedding_model at the top level; the Gateway's /health nests the backend's
+// full report under checks.backend_service.backend_report, since the Gateway
+// has its own separate Redis/backend-reachability checks at the top level
+// too. Reads both shapes rather than assuming one, so this keeps working
+// whichever the frontend is pointed at.
+interface GatewayHealthResponse {
+  checks?: {
+    backend_service?: {
+      backend_report?: { embedding_model?: string; guardrails_supported_models?: string[] } | null;
+    };
+  };
+}
 
-  if (!response.ok) {
-    await parseErrorAndThrow(response);
-  }
-  return (await response.json()) as { embedding_model: string };
+export async function getHealth(): Promise<{ embedding_model: string; guardrails_supported_models: string[] }> {
+  // /health intentionally returns 503 whenever ANY check is unhealthy (e.g.
+  // Redis down locally) even when the one check this field actually needs
+  // (backend_service) is fine - unlike every other endpoint, a non-2xx
+  // here doesn't mean "no data," so this reads the body regardless of
+  // status instead of throwing it away via parseErrorAndThrow.
+  const response = await fetch(`${API_BASE_URL}/health`);
+  const body = (await response.json()) as {
+    embedding_model?: string;
+    guardrails_supported_models?: string[];
+  } & GatewayHealthResponse;
+  const embeddingModel = body.embedding_model ?? body.checks?.backend_service?.backend_report?.embedding_model ?? "";
+  // Phase 244 - same dual-shape reasoning as embedding_model above.
+  const guardrailsSupportedModels =
+    body.guardrails_supported_models ?? body.checks?.backend_service?.backend_report?.guardrails_supported_models ?? [];
+  return { embedding_model: embeddingModel, guardrails_supported_models: guardrailsSupportedModels };
 }
 
 export async function submitFaqQuestion(userProfile: UserProfile, query: string): Promise<FaqSubmissionRecord> {

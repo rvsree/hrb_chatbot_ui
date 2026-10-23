@@ -1092,6 +1092,22 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                   </span>
                   <table className="explainability-data-table">
                     <tbody>
+                      {message.resolvedMode && (
+                        <tr>
+                          <th>
+                            Auto resolved to{" "}
+                            <InfoIcon
+                              info={{
+                                label: "Auto mode routing",
+                                description:
+                                  "This turn used \"Auto\" mode - a cheap classification step picked this pipeline per question instead of you selecting it directly.",
+                                implemented: true,
+                              }}
+                            />
+                          </th>
+                          <td>{message.resolvedMode === "multi-agentic-rag" ? "Agentic Workflow" : "Reflex Agent"}</td>
+                        </tr>
+                      )}
                       <tr>
                         <th>Search strategy</th>
                         <td>{SEARCH_STRATEGY_DISPLAY_LABELS[resolvedSearchStrategy] ?? resolvedSearchStrategy}</td>

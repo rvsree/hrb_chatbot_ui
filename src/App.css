@@ -365,6 +365,40 @@ button.sidebar-section-header:hover {
   color: var(--text-muted);
 }
 
+/* 2026-10-21 - Settings trigger: just a gear + label, opens a modal now
+   instead of expanding inline - overrides the shared .sidebar-section-
+   header's space-between (History/Adhoc History still need that, to
+   push their own chevron to the far right) since gear+label read as one
+   left-aligned group, not two ends of a row. */
+.settings-trigger {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.settings-gear-icon {
+  font-size: 13px;
+}
+
+.settings-modal-card .settings-tabs-bar {
+  margin-top: 4px;
+}
+
+/* 2026-10-21 - fixed size, not just a max- constraint - the 3 tabs hold
+   genuinely different amounts of content (RAG Search's single-select vs.
+   RAG Config's several sliders), and letting .modal-card's default
+   shrink-to-fit behavior apply meant the popup visibly resized every
+   time you switched tabs. A static size sized for the tallest tab avoids
+   that; overflow-y: auto (inherited from .modal-card) still protects a
+   future tab that outgrows even this. Widened/heightened same day -
+   Model tab grew from 2 fields to 6 (Phase 243's model tiering +
+   DeepEval split + embedding split), outgrowing the original 560x640. */
+.settings-modal-card {
+  width: 680px;
+  height: min(760px, 90vh);
+  max-width: 680px;
+  max-height: min(760px, 90vh);
+}
+
 .sidebar-section-body {
   display: flex;
   flex-direction: column;

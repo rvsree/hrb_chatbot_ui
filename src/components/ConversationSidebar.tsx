@@ -27,7 +27,12 @@ export default function ConversationSidebar({
 }: ConversationSidebarProps) {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
   const [isAdhocHistoryExpanded, setIsAdhocHistoryExpanded] = useState(true);
-  const [isSettingsExpanded, setIsSettingsExpanded] = useState(true);
+  // 2026-10-21 - Settings moved from an inline expand/collapse section
+  // (chevron on the right of the row) to a popup modal, user-directed -
+  // frees up sidebar height that the 3-tab RAG Search/RAG Config/Model
+  // content used to take, same modal-overlay/modal-card pattern already
+  // used by ExplainabilityModal.
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   return (
     <aside className="sidebar">
@@ -110,15 +115,29 @@ export default function ConversationSidebar({
         <section className="sidebar-section sidebar-section-settings">
           <button
             type="button"
-            className="sidebar-section-header"
-            onClick={() => setIsSettingsExpanded((current) => !current)}
-            aria-expanded={isSettingsExpanded}
+            className="sidebar-section-header settings-trigger"
+            onClick={() => setIsSettingsModalOpen(true)}
           >
+            <span className="settings-gear-icon" aria-hidden="true">
+              ⚙
+            </span>
             <span>Settings</span>
-            <span className="sidebar-section-chevron">{isSettingsExpanded ? "▾" : "▸"}</span>
           </button>
-          {isSettingsExpanded && <div className="sidebar-section-body">{children}</div>}
         </section>
+      )}
+
+      {isSettingsModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsSettingsModalOpen(false)}>
+          <div className="modal-card settings-modal-card" onClick={(event) => event.stopPropagation()}>
+            <h2>Settings</h2>
+            {children}
+            <div className="modal-actions">
+              <button type="button" onClick={() => setIsSettingsModalOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </aside>
   );

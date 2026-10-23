@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   askAdhocDocumentChat,
   askAgenticQuery,
+  askAutoRoutedQuery,
   askMultiAgenticQuery,
   askQuery,
   deleteConversation,
@@ -34,27 +35,34 @@ import type {
   SearchStrategy,
 } from "../types";
 
-// 2026-10-18 - "genai-rag" display label renamed to "Reflex RAG" (user-
-// directed): this mode is a single retrieve-then-generate pass with no
-// agent loop or planning, matching the IK FDE course's "reflex agent"
-// concept (direct stimulus-response, no deliberation) better than its old
-// generic name. Internal value stays "genai-rag" unchanged, same as
-// "single-agentic-rag"/"multi-agentic-rag" already differ from their own
-// "Single-Agent RAG"/"Multi-Agent RAG" labels below - this project's
-// existing convention, not a new inconsistency. The backend API path
-// (/v1/genai-rag-retrieval/query) and the DocLink feature key
-// ("genai-rag-chat", synced server-side via scripts/sync_admin_docs.py)
-// are NOT renamed here - flagged separately, real compat/sync risk.
+// 2026-10-21 - "Reflex RAG" renamed to "Direct RAG": frees "Reflex" for
+// single-agentic-rag's new "Reflex Agent" label below (user-directed).
+// The 2026-10-18 note above invoked the IK FDE course's own "reflex
+// agent" term for genai-rag specifically - but with single-agentic-rag
+// now also wanting "Reflex" in its name, one word would mean two
+// different pipelines. "Direct RAG" names what genai-rag actually is (a
+// fixed retrieve-then-generate pass, no agent loop at all) without
+// competing for "reflex". multi-agentic-rag becomes "Agentic Workflow"
+// (same user direction) - Planner-dispatch-Reviewer is the real
+// "workflow" of the three. Internal values stay unchanged ("genai-rag"/
+// "single-agentic-rag"/"multi-agentic-rag") - only display labels move.
+// Phase 240 - "Auto" added: classifies single- vs multi-agentic-rag per
+// question instead of the caller picking. Both forced options stay
+// selectable too (demos/interviews - this project's whole purpose).
 const MODE_LABELS: Record<ChatMode, string> = {
-  "genai-rag": "Reflex RAG",
-  "single-agentic-rag": "Single-Agent RAG",
-  "multi-agentic-rag": "Multi-Agent RAG",
+  "genai-rag": "Direct RAG",
+  "single-agentic-rag": "Reflex Agent",
+  "multi-agentic-rag": "Agentic Workflow",
+  "auto-agentic-rag": "Auto",
 };
 
 // Phase 218 - "similarity"'s own label now names its real algorithm (it
 // always ran this way; just wasn't spelled out before) and "knn" is a new,
 // genuinely different, real option - not a decorative duplicate of it.
+// Phase 252 - "dynamic" added first (object order drives dropdown order,
+// and it's now the default selection, user-directed).
 const SEARCH_STRATEGY_LABELS: Record<SearchStrategy, string> = {
+  dynamic: "Dynamic RAG Retrieval",
   similarity: "Semantic Search - ANN (Approximate Nearest Neighbor) via HNSW",
   mmr: "MMR (Maximal Marginal Relevance)",
   keyword: "Keyword",
@@ -79,6 +87,7 @@ const MODE_DOC_FEATURE: Record<ChatMode, string> = {
   "genai-rag": "genai-rag-chat",
   "single-agentic-rag": "single-agentic-rag",
   "multi-agentic-rag": "multi-agentic-rag",
+  "auto-agentic-rag": "auto-agentic-rag",
 };
 const RETRIEVAL_DOC_FEATURE = "retrieval-strategies";
 
@@ -88,8 +97,10 @@ const RETRIEVAL_DOC_FEATURE = "retrieval-strategies";
 // question: both ChromaDB and Pinecone support both, with a real cost
 // difference (noted below), not a feature gap on either side.
 const SEARCH_STRATEGY_HELP: Record<SearchStrategy, string> = {
+  dynamic:
+    "Picks the right retrieval technique for you, per question, automatically - no setup needed. Short/acronym-heavy questions lean Keyword, broad 'tell me about' questions lean MMR, questions mixing specific terms with natural language lean Hybrid, everything else uses Semantic Search. The retrieval technique that actually ran is always shown in Explainability.",
   similarity:
-    "Ranks chunks by meaning-based relevance to your question (vector similarity), via each backend's own approximate index (HNSW). Fast, and the default - best for most questions, but can return several chunks covering the same point if the knowledge base repeats it, and HNSW's approximation can occasionally miss the true closest match. Supported identically by ChromaDB and Pinecone - this is what both already run internally, always.",
+    "Ranks chunks by meaning-based relevance to your question (vector similarity), via each backend's own approximate index (HNSW). Fast - best for most questions, but can return several chunks covering the same point if the knowledge base repeats it, and HNSW's approximation can occasionally miss the true closest match. Supported identically by ChromaDB and Pinecone - this is what both already run internally, always.",
   mmr: "Also ranks by relevance (same HNSW-backed search as Semantic Search), but actively avoids picking chunks too similar to ones already chosen - trades a little pure relevance for broader topic coverage. The Diversity (lambda) slider controls the balance: 1.0 = pure relevance, 0.0 = pure diversity.",
   keyword:
     "Ranks by exact word/acronym overlap (BM25), not meaning. Best when your question uses specific terms, codes, or acronyms a meaning-based search might miss.",
@@ -109,6 +120,17 @@ const DEFAULT_TEMPERATURE = 0.0;
 // today for the frontend to read live instead.
 const DEFAULT_TOP_K = 5;
 const DEFAULT_JUDGE_MODEL = "gpt-4.1-mini";
+// 2026-10-21 - DeepEval isn't integrated in the backend (only comment
+// mentions exist, no real library/pipeline wiring) - this field is UI-only
+// for now, not sent on any request, per explicit user decision. Kept
+// separate from llmJudgeModel (the real, wired field) rather than merged,
+// so the distinction stays visible once DeepEval is actually built.
+const DEFAULT_DEEPEVAL_MODEL = "";
+// Phase 243 - mirrors hrb_chatbot_v2's real OPENAI_DECOMPOSE_MODEL/
+// OPENAI_PLANNER_MODEL .env defaults, same "mirror the real value, don't
+// guess" convention as DEFAULT_JUDGE_MODEL above.
+const DEFAULT_DECOMPOSE_MODEL = "gpt-4.1-nano";
+const DEFAULT_PLANNER_MODEL = "gpt-4.1-nano";
 
 // Phase 136 backend: MAX_FILES=3, ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES=10MB
 // (models/adhoc_chat.py) - mirrored here exactly, not guessed.
@@ -188,7 +210,8 @@ export default function ChatPage() {
   // default flipped to off (was on) - user-directed.
   const [adhocChatEnabled, setAdhocChatEnabled] = useState(false);
   const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE);
-  const [searchStrategy, setSearchStrategy] = useState<SearchStrategy>("similarity");
+  // Phase 252 - default changed from "similarity" to "dynamic", user-directed.
+  const [searchStrategy, setSearchStrategy] = useState<SearchStrategy>("dynamic");
   const [lambdaMult, setLambdaMult] = useState(DEFAULT_LAMBDA_MULT);
   // Phase 228 - separate state from searchStrategy above, deliberately:
   // different value domain (2 options, not 5) and different request field
@@ -212,6 +235,19 @@ export default function ChatPage() {
   // threshold set, enforced backend-side.
   const [enableCorrectiveRetry, setEnableCorrectiveRetry] = useState(false);
   const [llmJudgeModel, setLlmJudgeModel] = useState(DEFAULT_JUDGE_MODEL);
+  // Phase 243 - decomposeModel is genai-rag only, plannerModel is
+  // multi-agentic-rag only (classification_options.decompose_model/
+  // planner_model - never both on the same request, see client.ts).
+  const [decomposeModel, setDecomposeModel] = useState(DEFAULT_DECOMPOSE_MODEL);
+  const [plannerModel, setPlannerModel] = useState(DEFAULT_PLANNER_MODEL);
+  // UI-only - not sent on any request, see DEFAULT_DEEPEVAL_MODEL above.
+  const [deepEvalModel, setDeepEvalModel] = useState(DEFAULT_DEEPEVAL_MODEL);
+  // Phase 244 - real, wired override, shared across all 3 modes. "" means
+  // "use the backend's own default" (not sent at all, see client.ts) -
+  // never a value the backend would reject, since the <select> is built
+  // entirely from guardrailsSupportedModels below, fetched from GET /health.
+  const [guardrailsModel, setGuardrailsModel] = useState("");
+  const [guardrailsSupportedModels, setGuardrailsSupportedModels] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -254,8 +290,13 @@ export default function ChatPage() {
     setConversations(loadConversations(identity.employee_id));
 
     // Phase 128 - best-effort; Settings panel just shows nothing for this field if it fails.
+    // Phase 244 - guardrails_supported_models populates the Guardrails Model
+    // dropdown too, same fetch, same best-effort failure handling.
     getHealth()
-      .then((health) => setEmbeddingModel(health.embedding_model))
+      .then((health) => {
+        setEmbeddingModel(health.embedding_model);
+        setGuardrailsSupportedModels(health.guardrails_supported_models);
+      })
       .catch(() => {});
 
     // Phase 116: merge in conversations that exist on the server but not in
@@ -514,15 +555,20 @@ export default function ChatPage() {
       judgeModel: llmJudgeModel || undefined,
       evalScoreThreshold,
       enableCorrectiveRetry,
+      decomposeModel: decomposeModel || undefined,
+      guardrailsModel: guardrailsModel || undefined,
     };
     // Judge model / eval threshold apply uniformly across all 3 pipelines
     // (Phase 215) - genai-rag gets them via genaiRagOptions above, the
     // other 2 modes via this smaller, shared shape. Phase 228 -
     // agentSearchStrategy likewise only means anything for these 2 modes.
+    // Phase 244 - guardrailsModel too, genuinely shared (unlike plannerModel).
     const evalOptions = {
       judgeModel: llmJudgeModel || undefined,
       evalScoreThreshold,
       agentSearchStrategy,
+      plannerModel: plannerModel || undefined,
+      guardrailsModel: guardrailsModel || undefined,
     };
 
     try {
@@ -595,7 +641,7 @@ export default function ChatPage() {
           evalScoreThreshold,
         };
         returnedConversationId = response.conversation_id;
-      } else {
+      } else if (mode === "multi-agentic-rag") {
         const response = await askMultiAgenticQuery(currentIdentity, query, conversationIdSoFar, evalOptions);
         assistantMessage = {
           id: makeId(),
@@ -606,6 +652,27 @@ export default function ChatPage() {
           sources: response.sources,
           iterations: response.iterations,
           tasks: response.tasks,
+          feedback: null,
+          explainability: response.explainability_info,
+          evalScoreThreshold,
+        };
+        returnedConversationId = response.conversation_id;
+      } else {
+        // Phase 240 - "Auto": response is whichever shape the resolved
+        // pipeline actually returned, discriminated by its own resolved_mode
+        // field ("tasks" only exists on the multi-agentic-rag shape).
+        const response = await askAutoRoutedQuery(currentIdentity, query, conversationIdSoFar, evalOptions);
+        const wasMulti = "tasks" in response;
+        assistantMessage = {
+          id: makeId(),
+          role: "assistant",
+          text: response.answer,
+          createdAt: Date.now(),
+          toolsUsed: response.tools_used,
+          sources: response.sources,
+          iterations: response.iterations,
+          tasks: wasMulti ? response.tasks : undefined,
+          resolvedMode: response.resolved_mode ?? undefined,
           feedback: null,
           explainability: response.explainability_info,
           evalScoreThreshold,
@@ -798,7 +865,8 @@ export default function ChatPage() {
 
               {/* 2026-10-19 (Phase 228) - Retrieval Strategy now shown for
                   all 3 modes, user-directed. Reflex RAG gets the full
-                  5-option list (genai-rag's own `search_strategy` field);
+                  6-option list (genai-rag's own `search_strategy` field,
+                  "dynamic" added Phase 252 and made the default);
                   Single/Multi-Agent RAG get a real but NARROWER 2-option
                   list bound to a separate state (agentSearchStrategy) and
                   a different request field - their shared tool
@@ -852,7 +920,9 @@ export default function ChatPage() {
                   )}
                 </>
               )}
-              {(effectiveMode === "single-agentic-rag" || effectiveMode === "multi-agentic-rag") && (
+              {(effectiveMode === "single-agentic-rag" ||
+                effectiveMode === "multi-agentic-rag" ||
+                effectiveMode === "auto-agentic-rag") && (
                 <label htmlFor="agent-search-strategy-select">
                   <span className="tuning-label-row">
                     Retrieval Strategy:
@@ -863,10 +933,15 @@ export default function ChatPage() {
                           per search when it has a reason to (e.g. picking MMR for a broad question). This only
                           applies when the AI doesn't make its own choice.
                         </p>
-                      ) : (
+                      ) : effectiveMode === "multi-agentic-rag" ? (
                         <p>
                           Unlike Single-Agent RAG, there's no AI choice involved here - this mode always uses
                           whatever you pick here, every time it searches.
+                        </p>
+                      ) : (
+                        <p>
+                          Auto picks Reflex Agent or Agentic Workflow per question - this setting applies to
+                          whichever one it resolves to, same behavior each mode's own help text above describes.
                         </p>
                       )}
                       {Object.entries(AGENT_SEARCH_STRATEGY_LABELS).map(([value, label]) => (
@@ -976,14 +1051,40 @@ export default function ChatPage() {
 
           {settingsTab === "model" && (
             <div className="settings-tab-panel">
+              {/* 2026-10-21 - both rows read the same real value (OPENAI_EMBED_MODEL,
+                  via getHealth().embedding_model) - genuinely one configured model,
+                  not two. Shown as two rows anyway, same reasoning as the DeepEval/
+                  LLM-as-Judge split above: the two USE CASES are distinct (chunking
+                  a document at ingestion time vs. embedding the live query at search
+                  time) even though no override exists for either independently - a
+                  RAG retriever requires both to share one embedding space, so there's
+                  no real "different model per stage" option to expose here. */}
               {embeddingModel && (
-                <label>
-                  Embedding Model:
-                  <input type="text" value={embeddingModel} readOnly disabled />
-                </label>
+                <>
+                  <label>
+                    Embedding Model (Document Chunks → Vectors):
+                    <input
+                      type="text"
+                      value={embeddingModel}
+                      readOnly
+                      disabled
+                      title="Embeds each document chunk into a vector at ingestion time. Same configured model as Embedding Model (Query Embedding) below - a RAG retriever needs both in the same embedding space."
+                    />
+                  </label>
+                  <label>
+                    Embedding Model (Query Embedding):
+                    <input
+                      type="text"
+                      value={embeddingModel}
+                      readOnly
+                      disabled
+                      title="Embeds your question into a vector before similarity search. Same configured model as Embedding Model (Document Chunks → Vectors) above, for the same reason."
+                    />
+                  </label>
+                </>
               )}
               <label htmlFor="llm-judge-model-input">
-                LLM Judge Model:
+                LLM as Judge Model:
                 <input
                   id="llm-judge-model-input"
                   type="text"
@@ -993,76 +1094,82 @@ export default function ChatPage() {
                   title="Which model scores groundedness/completeness/retrieval precision. Leave blank to use the backend's own default judge model."
                 />
               </label>
+              <label htmlFor="deepeval-model-input">
+                DeepEval Model:
+                <input
+                  id="deepeval-model-input"
+                  type="text"
+                  placeholder="not yet wired up"
+                  value={deepEvalModel}
+                  onChange={(event) => setDeepEvalModel(event.target.value)}
+                  title="DeepEval isn't integrated in the backend yet - this field isn't sent on any request. Shown here as a placeholder until real DeepEval scoring exists."
+                />
+              </label>
+              {/* Phase 243 - model tiering: cheap-tier models for the
+                  classification-only steps (query decomposition, agentic
+                  routing), each shown only for the mode that actually has
+                  that step - AgenticRagRequest (single-agentic-rag) has
+                  no classification_options field at all to carry either on. */}
+              {effectiveMode === "genai-rag" && (
+                <label htmlFor="decompose-model-input">
+                  Query Decomposition Model:
+                  <input
+                    id="decompose-model-input"
+                    type="text"
+                    placeholder="default"
+                    value={decomposeModel}
+                    onChange={(event) => setDecomposeModel(event.target.value)}
+                    title="Which model splits a compound question into sub-questions before retrieval. Leave blank to use the backend's own default (gpt-4.1-nano)."
+                  />
+                </label>
+              )}
+              {effectiveMode === "multi-agentic-rag" && (
+                <label htmlFor="planner-model-input">
+                  RAG Model:
+                  <input
+                    id="planner-model-input"
+                    type="text"
+                    placeholder="default"
+                    value={plannerModel}
+                    onChange={(event) => setPlannerModel(event.target.value)}
+                    title="Which model the Planner Agent uses to route your question to the right sub-agent(s). Label-only - this is still Planner-only; Reviewer and the ReAct loop stay on the full model, unchanged (confirmed 2026-10-21). Leave blank to use the backend's own default (gpt-4.1-nano)."
+                  />
+                </label>
+              )}
+              {/* Phase 244 - real, wired override (reversed Phase 243's
+                  "out of scope" call, user-directed). Dropdown, not free
+                  text - options come entirely from guardrailsSupportedModels
+                  (GET /health), so nothing the backend would 422 on can be
+                  selected. Empty option = use the backend's own default. */}
+              <label htmlFor="guardrails-model-select">
+                Guardrails Model:
+                <select
+                  id="guardrails-model-select"
+                  value={guardrailsModel}
+                  onChange={(event) => setGuardrailsModel(event.target.value)}
+                  title="Which model runs input/output safety checks. Leave as default to use the backend's own configured model."
+                >
+                  <option value="">default</option>
+                  {guardrailsSupportedModels.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           )}
         </div>
 
-        {/* 2026-10-18 - user-directed: moved below the RAG Pipeline
-            tab strip (was above it) - these are feature toggles, not RAG
-            config, so they read better after the pipeline/retrieval
-            settings than before them. Phase 164 - gated to Multi-Agent
-            RAG mode only (reverses Phase 162's original "deliberately
-            mode-independent" choice). Round-2 follow-up: also gated to
-            employee/manager only - HR specialists get their own separate
-            "Leave approvals" view instead (Admin menu) and must never see
-            or use this submission entry point, confirmed live-tested as a
-            real gap (an hr_support persona could submit a request through
-            here before this fix). Still a separate entry point from the
-            GenAI Chat Workflow's own attach-files popup below - always
-            unchecked at rest; checking it just opens the popup.
-            2026-10-18 - briefly widened to also show in GenAI RAG mode,
-            then reverted 2026-10-19 (user-directed, re-confirmed): Multi-
-            Agent RAG only - the widening is what the user was actually
-            asking about when they flagged this as confusing. */}
-        {/* 2026-10-19 - user-reported: Settings' overall height still
-            changed when switching RAG Pipeline, even after the panel
-            itself (above) got a fixed min-height - because THIS block,
-            unlike the panel, used to disappear from the DOM entirely for
-            every mode except Multi-Agent RAG, which the panel's own fix
-            never touched. Fixed by always rendering this wrapper (so it
-            always reserves the same row of vertical space) and only
-            conditionally rendering the checkbox INSIDE it - the same
-            "reserve the slot, don't remove it" fix as the panel's own
-            min-height, just applied to this separate element too.
-            2026-10-19 round 2 - user-reported: this block (and GenAI Chat
-            Workflow below it) rendered unconditionally regardless of
-            which Settings TAB was selected - visible on RAG Config and
-            Model too, not just RAG Search, where it topically belongs
-            (both are retrieval-related toggles). Scoped to the RAG
-            Search tab only, same as Retrieval Strategy/RAG Pipeline
-            above it. */}
-        {settingsTab === "rag-search" && (
-          <div className="tuning-bar unpaid-leave-slot">
-          {effectiveMode === "multi-agentic-rag" && currentIdentity.role !== "hr_support" && (
-            <div className="checkbox-row-with-help">
-              <label htmlFor="unpaid-leave-trigger-checkbox" className="checkbox-label">
-                <input
-                  id="unpaid-leave-trigger-checkbox"
-                  type="checkbox"
-                  checked={showUnpaidLeaveModal}
-                  onChange={() => setShowUnpaidLeaveModal(true)}
-                />
-                Request Unpaid Leave
-              </label>
-              <DocLink featureName="request-unpaid-leave" />
-              <HelpPopover label="What is Request Unpaid Leave?">
-                <p>
-                  Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability -
-                  for example, extended medical leave or a personal emergency. Fill in the dates and purpose, and
-                  optionally attach supporting documentation.
-                </p>
-                <p>
-                  Behind the scenes: the system first checks your leave history for the last 12 months for that
-                  same leave type. Every request - first-time or repeat - is then routed to a human HR specialist
-                  to review and approve or reject (a "human-in-the-loop" step) - the model never approves leave on
-                  its own. Once a specialist has reviewed it, you'll see the outcome (and get an email) - or check
-                  "My requests" any time.
-                </p>
-              </HelpPopover>
-            </div>
-          )}
-          </div>
-        )}
+        {/* 2026-10-21 - user-directed: Request Unpaid Leave moved out of
+            Settings entirely, to a persistent icon button on the left edge
+            of the composer (see composer-row below) - it's a standalone
+            leave-request workflow, not a RAG retrieval setting, and its
+            placement here previously needed its own layout-shift
+            workarounds (the "reserve the slot" history this comment used
+            to describe) precisely because it didn't really belong in this
+            tab. Same mode/role gating carried over unchanged: Multi-Agent
+            RAG only, hidden for hr_support. */}
 
         {/* Phase 144: fixes a real misread from Phase 142's own follow-up
             instruction. "this control" in that feedback meant the
@@ -1336,6 +1443,28 @@ export default function ChatPage() {
 
         <form className="composer" onSubmit={handleSend}>
           <div className="chat-column composer-row">
+            {/* 2026-10-21 - moved here from Settings -> RAG Search (user-
+                directed) - a persistent icon button on the left edge of the
+                composer, instead of a checkbox buried in a settings tab.
+                Same gating carried over unchanged: Multi-Agent RAG only,
+                hidden for hr_support (HR specialists use the separate
+                "Leave approvals" view instead - Admin menu). */}
+            {effectiveMode === "multi-agentic-rag" && currentIdentity.role !== "hr_support" && (
+              <button
+                type="button"
+                className="mic-button"
+                title="Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability - routed to a human HR specialist to review."
+                aria-label="Request Unpaid Leave"
+                onClick={() => setShowUnpaidLeaveModal(true)}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </button>
+            )}
             <textarea
               ref={textareaRef}
               value={draft}
