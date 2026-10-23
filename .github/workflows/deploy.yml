@@ -1,0 +1,90 @@
+name: Deploy
+
+# Real AWS resources used here were provisioned manually on 2026-10-07 (S3
+# bucket hrb-chatbot-ui-rvsree, CloudFront distribution E1CBYCM65AXV9Y,
+# ACM cert, Route53 alias at hrb-chatbot-ui.rvsree.dev) but never had a
+# CI/CD pipeline wired up until 2026-10-23, when this workflow and a
+# scoped IAM deploy user (hrb-chatbot-ui-github-actions-deploy) were
+# added. No Docker/App Runner here - this is a static build synced to S3
+# behind CloudFront, not a container service like the other 6 repos.
+#
+# Only master triggers this - a push to any other branch never reaches AWS.
+
+on:
+  push:
+    branches: ["master"]
+
+env:
+  AWS_REGION: us-east-1
+  S3_BUCKET: hrb-chatbot-ui-rvsree
+  CLOUDFRONT_DISTRIBUTION_ID: E1CBYCM65AXV9Y
+  SITE_URL: https://hrb-chatbot-ui.rvsree.dev
+
+jobs:
+  build-and-deploy:
+    name: Build, sync to S3, invalidate CloudFront
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (uses .env.production, committed - no secrets in it)
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync hashed assets with a long cache lifetime
+        # Vite fingerprints every asset filename with a content hash, so
+        # these can be cached forever - a new deploy always ships new
+        # filenames, never reuses a stale one under an old name.
+        run: |
+          aws s3 sync dist/ "s3://${{ env.S3_BUCKET }}/" \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+
+      - name: Upload index.html with no caching
+        # index.html references the hashed asset filenames above, so it
+        # must never be served stale - a client must always fetch the
+        # latest one to find the current asset names.
+        run: |
+          aws s3 cp dist/index.html "s3://${{ env.S3_BUCKET }}/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Invalidate CloudFront so the new build serves immediately
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ env.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"
+
+      - name: Deployment smoke test - the live site actually answers
+        run: |
+          curl --fail --silent --show-error "${{ env.SITE_URL }}/" > /dev/null
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "### :white_check_mark: Deployment succeeded" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### :x: Deployment failed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Site URL: ${{ env.SITE_URL }}"
+            echo "- Triggered by: ${{ github.actor }}"
+          } >> "$GITHUB_STEP_SUMMARY"

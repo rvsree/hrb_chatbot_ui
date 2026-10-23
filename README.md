@@ -16,13 +16,24 @@ build/deploy pipeline, decoupled from the backend's.
 Local dev (`.env`, gitignored) points at whatever `VITE_API_BASE_URL` you
 set - `.env.example` defaults it to the production backend, so a fresh
 `cp .env.example .env` works with no editing. The production build
-(`.env.production`, committed - no secrets in it) always targets the
-production backend regardless of your local `.env`. The AWS frontend is a
-static `npm run build` output synced to an S3 bucket (`hrb-chatbot-ui-
-rvsree`) behind a CloudFront distribution with a Route53 alias - provisioned
-manually via the AWS CLI (2026-10-07), no CI/CD pipeline for it yet (a real
-upfront cost this repo's own deployment-guide doc already flagged - see the
-link above).
+(`.env.production`, committed - no secrets in it) targets
+`hrb_api_gateway_service` (`https://necxf9n7mv.us-east-1.awsapprunner.com`),
+not the backend directly - **2026-10-23 cutover**: this repo's own traffic
+now goes through the Gateway, matching the system's intended architecture
+(single public entry point for RBAC/CORS/rate-limiting). The Gateway's own
+CORS allow-list and `/health` response shape were already built (Phases
+1/7) specifically for this origin and this frontend's dual-shape
+`getHealth()` reader - confirmed working live, not just configured.
+
+The AWS frontend is a static `npm run build` output synced to an S3 bucket
+(`hrb-chatbot-ui-rvsree`) behind a CloudFront distribution with a Route53
+alias - provisioned manually via the AWS CLI (2026-10-07), sitting unused
+until **2026-10-23**, when a fresh build was pushed live and a real CI/CD
+pipeline (`.github/workflows/deploy.yml`, a scoped
+`hrb-chatbot-ui-github-actions-deploy` IAM user) was wired up - every push
+to `master` now rebuilds, syncs to S3, and invalidates CloudFront
+automatically, the same "no manual deploy step" convention the other 6
+repos already use.
 
 ## Running this project (first time, step by step)
 
