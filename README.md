@@ -1,7 +1,7 @@
 # HRB Chatbot UI
 
-React + TypeScript + Vite frontend for `hrb_chatbot_v2` (a separate repo,
-deliberately - see `hrb_chatbot_v2/docs/dev-reference/deployment-guide/
+React + TypeScript + Vite frontend for `hrb_chatbot_service` (a separate repo,
+deliberately - see `hrb_chatbot_service/docs/dev-reference/deployment-guide/
 07-reactjs-ui.html`). Deploys to S3 + CloudFront, not App Runner - its own
 build/deploy pipeline, decoupled from the backend's.
 
@@ -10,7 +10,8 @@ build/deploy pipeline, decoupled from the backend's.
 | App | Local | AWS (production) |
 | --- | --- | --- |
 | Frontend (this repo) | `http://localhost:5173` (`npm run dev`) | `https://hrb-chatbot-ui.rvsree.dev` |
-| Backend (`hrb_chatbot_v2`, separate repo) | `http://127.0.0.1:8093` | `https://hrb-chatbot.rvsree.dev` |
+| Gateway (`hrb_api_gateway_service`, separate repo - what this frontend actually calls in production as of 2026-10-23) | `http://127.0.0.1:8100` | `https://necxf9n7mv.us-east-1.awsapprunner.com` |
+| Backend (`hrb_chatbot_service`, separate repo) | `http://127.0.0.1:8093` | `https://hrb-chatbot.rvsree.dev` |
 | MCP server (`hrb_lms_mcp`, separate repo - leave balance/history tools, called by the backend, not by this frontend directly) | `http://127.0.0.1:8190` | `https://hrb-lms-mcp.rvsree.dev` |
 
 Local dev (`.env`, gitignored) points at whatever `VITE_API_BASE_URL` you
@@ -98,7 +99,7 @@ than describing what the screen looked like.
 
 ## What's real vs. mocked
 
-Built against `hrb_chatbot_v2`'s actual API contracts, not invented ones -
+Built against `hrb_chatbot_service`'s actual API contracts, not invented ones -
 see that repo's `docs/dev-reference/ui-wireframes-review.html` for the
 original audit. Updated 2026-10-07 - two of the three gaps that audit found
 have since been closed:
@@ -117,7 +118,7 @@ have since been closed:
   `/feedback`) lists it back out. The **explainability** popup's
   cost-in-dollars field is still the one real gap left - token/latency/
   cache-vs-live/eval-score fields are all real, cost is explicitly
-  excluded (tracked in `hrb_chatbot_v2`'s own `BACKLOG.md`).
+  excluded (tracked in `hrb_chatbot_service`'s own `BACKLOG.md`).
 
 Real and working: asking a question (`POST /v1/genai-rag-retrieval/query`),
 citations, and document upload for `hr_support`-role users
