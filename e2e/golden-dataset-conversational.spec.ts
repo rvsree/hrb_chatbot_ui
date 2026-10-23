@@ -88,6 +88,17 @@ async function selectMode(page: Page, mode: ConversationalCase["mode"]) {
 }
 
 async function sendTurn(page: Page, query: string): Promise<string> {
+  // A blocked/errored request (e.g. a guardrail 422) renders into
+  // .error-banner, NOT a new .message-assistant bubble - the message list
+  // is untouched. Found live: the first version of this function always
+  // read .message-assistant.last(), so a blocked turn silently returned
+  // the PREVIOUS turn's still-rendered answer instead of the real error,
+  // making a correctly-blocked adversarial prompt look like the guardrail
+  // had been bypassed. Count assistant messages before sending so a
+  // genuinely new one can be told apart from a stale one.
+  const assistantMessages = page.locator(".message.message-assistant .message-text");
+  const countBefore = await assistantMessages.count();
+
   const textarea = page.locator("textarea");
   await textarea.fill(query);
   await page.locator('button[type="submit"]').click();
@@ -98,9 +109,16 @@ async function sendTurn(page: Page, query: string): Promise<string> {
   await page.locator(".message-typing").waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
   await page.locator(".message-typing").waitFor({ state: "hidden", timeout: 90_000 });
 
-  const assistantMessages = page.locator(".message.message-assistant .message-text");
+  const errorBanner = page.locator(".error-banner");
+  if (await errorBanner.isVisible().catch(() => false)) {
+    return `[ERROR_BANNER] ${await errorBanner.innerText()}`;
+  }
+
   const lastMessage = assistantMessages.last();
   await expect(lastMessage).toBeVisible();
+  await expect
+    .poll(async () => assistantMessages.count(), { timeout: 5_000 })
+    .toBeGreaterThan(countBefore);
   return lastMessage.innerText();
 }
 
