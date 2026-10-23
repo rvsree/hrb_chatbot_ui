@@ -129,8 +129,15 @@ const DEFAULT_DEEPEVAL_MODEL = "";
 // Phase 243 - mirrors hrb_chatbot_v2's real OPENAI_DECOMPOSE_MODEL/
 // OPENAI_PLANNER_MODEL .env defaults, same "mirror the real value, don't
 // guess" convention as DEFAULT_JUDGE_MODEL above.
-const DEFAULT_DECOMPOSE_MODEL = "gpt-4.1-nano";
-const DEFAULT_PLANNER_MODEL = "gpt-4.1-nano";
+// 2026-10-23 HOTFIX: was "gpt-4.1-nano" - OpenAI shut that model down
+// today. Since these fields are always sent as an explicit per-request
+// override (never empty, see decomposeModel/plannerModel below), this
+// silently broke query decomposition and Planner routing on every real
+// request from this website - found live via a Playwright test driving
+// the real UI, invisible to direct API testing since a raw request with
+// no override never hits this path at all.
+const DEFAULT_DECOMPOSE_MODEL = "gpt-4.1-mini";
+const DEFAULT_PLANNER_MODEL = "gpt-4.1-mini";
 
 // Phase 136 backend: MAX_FILES=3, ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES=10MB
 // (models/adhoc_chat.py) - mirrored here exactly, not guessed.
@@ -1119,7 +1126,7 @@ export default function ChatPage() {
                     placeholder="default"
                     value={decomposeModel}
                     onChange={(event) => setDecomposeModel(event.target.value)}
-                    title="Which model splits a compound question into sub-questions before retrieval. Leave blank to use the backend's own default (gpt-4.1-nano)."
+                    title="Which model splits a compound question into sub-questions before retrieval. Leave blank to use the backend's own default (gpt-4.1-mini)."
                   />
                 </label>
               )}
@@ -1132,7 +1139,7 @@ export default function ChatPage() {
                     placeholder="default"
                     value={plannerModel}
                     onChange={(event) => setPlannerModel(event.target.value)}
-                    title="Which model the Planner Agent uses to route your question to the right sub-agent(s). Label-only - this is still Planner-only; Reviewer and the ReAct loop stay on the full model, unchanged (confirmed 2026-10-21). Leave blank to use the backend's own default (gpt-4.1-nano)."
+                    title="Which model the Planner Agent uses to route your question to the right sub-agent(s). Label-only - this is still Planner-only; Reviewer and the ReAct loop stay on the full model, unchanged (confirmed 2026-10-21). Leave blank to use the backend's own default (gpt-4.1-mini)."
                   />
                 </label>
               )}
