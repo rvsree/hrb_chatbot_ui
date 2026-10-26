@@ -2419,17 +2419,29 @@ button.doc-link-popover-item:hover {
    dropdown reads as a visibly different section, independent of each
    run's own status color (success/failure/in_progress stays the primary
    signal on every box; this is a secondary "whose pipeline is this" cue). */
+.pipeline-app-frontend {
+  --app-accent: #f2b544;
+}
+.pipeline-app-gateway {
+  --app-accent: #6fcf97;
+}
 .pipeline-app-backend {
   --app-accent: #5b9bd5;
 }
-.pipeline-app-ingestion_lambda {
+.pipeline-app-rag_ingestion {
   --app-accent: #b388eb;
+}
+.pipeline-app-rag_retrieval {
+  --app-accent: #ef8a7a;
+}
+.pipeline-app-platform_components {
+  --app-accent: #9aa5b1;
+}
+.pipeline-app-common_libs {
+  --app-accent: #c9a66b;
 }
 .pipeline-app-lms_mcp {
   --app-accent: #4fd1c5;
-}
-.pipeline-app-frontend {
-  --app-accent: #f2b544;
 }
 .pipeline-dashboard .phase-bar-section,
 .pipeline-dashboard .pipeline-run {

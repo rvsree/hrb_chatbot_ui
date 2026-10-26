@@ -19,7 +19,9 @@ import {
   listEvalRuns,
   listGoldenDataset,
   listInterviewQaCards,
+  listLiveQueries,
   listPipelineSnapshots,
+  listSyntheticDataset,
 } from "../api/client";
 import AdminConversationModal from "../components/AdminConversationModal";
 import AdminFeedbackModal from "../components/AdminFeedbackModal";
@@ -28,6 +30,7 @@ import InterviewQaCardView from "../components/InterviewQaCardView";
 import InterviewQaEditorModal from "../components/InterviewQaEditorModal";
 import LeaveReviewModal from "../components/LeaveReviewModal";
 import PipelineStepper from "../components/PipelineStepper";
+import SettingsPanel from "../components/SettingsPanel";
 import DocumentsPage from "./DocumentsPage";
 import UploadPage from "./UploadPage";
 import { useIdentity } from "../context/IdentityContext";
@@ -45,9 +48,11 @@ import {
   type HrLeaveRequestSummary,
   type InterviewQaCard,
   type LeaveTypeCode,
+  type LiveQuerySummary,
   type PipelineMetricsRow,
   type PipelineSnapshotSummary,
   type PipelineStatusResponse,
+  type SyntheticDatasetCaseSummary,
   type WorkflowStatus,
 } from "../types";
 
@@ -59,9 +64,12 @@ type AdminTab =
   | "leave-requests"
   | "docs"
   | "golden-dataset"
+  | "live-queries"
+  | "synthetic-dataset"
   | "eval-runs"
   | "ci-status"
   | "live-metrics"
+  | "settings"
   | "interview-qa";
 
 // "documents"/"upload" render the real DocumentsPage/UploadPage components
@@ -78,9 +86,12 @@ const TAB_LABELS: Record<AdminTab, string> = {
   "leave-requests": "Leave Approvals",
   docs: "Architecture Docs",
   "golden-dataset": "Golden Dataset",
+  "live-queries": "Live Queries",
+  "synthetic-dataset": "Synthetic Dataset",
   "eval-runs": "Eval Runs",
   "ci-status": "CI/CD Pipeline",
   "live-metrics": "Live Metrics",
+  settings: "Settings",
   "interview-qa": "Interview Q&A",
 };
 
@@ -90,6 +101,8 @@ const COUNTED_TABS = [
   "leave-requests",
   "docs",
   "golden-dataset",
+  "live-queries",
+  "synthetic-dataset",
   "eval-runs",
   "interview-qa",
 ] as const;
@@ -124,8 +137,12 @@ const CATEGORY_TABS: Record<AdminCategory, AdminTab[]> = {
   // interview-qa-ref below, since it's reference content (the 40 test
   // case definitions themselves), not pipeline execution history. Eval
   // Runs stays here - that one really is CI/CD execution history.
-  "build-deploy": ["ci-status", "eval-runs", "live-metrics"],
-  "interview-qa-ref": ["docs", "golden-dataset", "interview-qa"],
+  "build-deploy": ["ci-status", "eval-runs", "live-metrics", "settings"],
+  // Phase 1 - live-queries/synthetic-dataset join golden-dataset here for
+  // the same reason it's here: reference/dataset content, not pipeline
+  // execution history (the category's own label is a pre-existing naming
+  // oddity, not something this phase fixes - flagged, not in scope).
+  "interview-qa-ref": ["docs", "golden-dataset", "live-queries", "synthetic-dataset", "interview-qa"],
 };
 
 const CATEGORY_ORDER: AdminCategory[] = ["admin", "hr-ops", "build-deploy", "interview-qa-ref"];
@@ -193,6 +210,9 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   const [leaveRequests, setLeaveRequests] = useState<HrLeaveRequestSummary[]>([]);
   const [docs, setDocs] = useState<AdminDocSummary[]>([]);
   const [goldenDatasetCases, setGoldenDatasetCases] = useState<GoldenDatasetCaseSummary[]>([]);
+  const [liveQueries, setLiveQueries] = useState<LiveQuerySummary[]>([]);
+  const [liveQueryLtmFilter, setLiveQueryLtmFilter] = useState<"all" | "ltm" | "not-ltm">("all");
+  const [syntheticDatasetCases, setSyntheticDatasetCases] = useState<SyntheticDatasetCaseSummary[]>([]);
   const [evalRuns, setEvalRuns] = useState<EvalRunSummary[]>([]);
   const [ciStatus, setCiStatus] = useState<CiStatusResponse | null>(null);
   const [ciStatusError, setCiStatusError] = useState<string | null>(null);
@@ -235,6 +255,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackRecord | null>(null);
   const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<HrLeaveRequestSummary | null>(null);
   const [selectedGoldenCase, setSelectedGoldenCase] = useState<GoldenDatasetCaseSummary | null>(null);
+  const [selectedSyntheticCase, setSelectedSyntheticCase] = useState<SyntheticDatasetCaseSummary | null>(null);
 
   const [checkedConversationIds, setCheckedConversationIds] = useState<Set<string>>(new Set());
   const [checkedFeedbackIds, setCheckedFeedbackIds] = useState<Set<number>>(new Set());
@@ -445,6 +466,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       leaveRequestsResult,
       docsResult,
       goldenDatasetResult,
+      liveQueriesResult,
+      syntheticDatasetResult,
       evalRunsResult,
       metricsResult,
       interviewQaResult,
@@ -454,6 +477,10 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       listAllLeaveRequests(currentIdentity),
       isEngineeringAdmin ? listAdminDocs(currentIdentity) : Promise.resolve({ count: 0, docs: [] }),
       isEngineeringAdmin ? listGoldenDataset(currentIdentity) : Promise.resolve({ count: 0, cases: [] }),
+      isEngineeringAdmin
+        ? listLiveQueries(currentIdentity, liveQueryLtmFilter === "all" ? undefined : liveQueryLtmFilter === "ltm")
+        : Promise.resolve({ count: 0, queries: [] }),
+      isEngineeringAdmin ? listSyntheticDataset(currentIdentity) : Promise.resolve({ count: 0, cases: [] }),
       isEngineeringAdmin ? listEvalRuns(currentIdentity) : Promise.resolve({ count: 0, runs: [] }),
       isEngineeringAdmin
         ? getRequestMetrics(currentIdentity, metricsWindowHours)
@@ -476,6 +503,12 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     if (goldenDatasetResult.status === "fulfilled") {
       setGoldenDatasetCases(goldenDatasetResult.value.cases);
     }
+    if (liveQueriesResult.status === "fulfilled") {
+      setLiveQueries(liveQueriesResult.value.queries);
+    }
+    if (syntheticDatasetResult.status === "fulfilled") {
+      setSyntheticDatasetCases(syntheticDatasetResult.value.cases);
+    }
     if (evalRunsResult.status === "fulfilled") {
       setEvalRuns(evalRunsResult.value.runs);
     }
@@ -492,6 +525,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       failureMessage("leave requests", leaveRequestsResult),
       failureMessage("architecture docs", docsResult),
       failureMessage("golden dataset", goldenDatasetResult),
+      failureMessage("live queries", liveQueriesResult),
+      failureMessage("synthetic dataset", syntheticDatasetResult),
       failureMessage("eval runs", evalRunsResult),
       failureMessage("live metrics", metricsResult),
       failureMessage("interview Q&A", interviewQaResult),
@@ -611,6 +646,17 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     }
   }
 
+  async function handleLiveQueryLtmFilterChange(next: "all" | "ltm" | "not-ltm") {
+    setLiveQueryLtmFilter(next);
+    try {
+      const result = await listLiveQueries(currentIdentity, next === "all" ? undefined : next === "ltm");
+      setLiveQueries(result.queries);
+    } catch {
+      // Best-effort - the tab just keeps showing the previous filter's
+      // data rather than a dedicated error state for this one control.
+    }
+  }
+
   async function handleMetricsWindowChange(hours: number) {
     setMetricsWindowHours(hours);
     try {
@@ -628,6 +674,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     "leave-requests": leaveRequests.length,
     docs: docs.length,
     "golden-dataset": goldenDatasetCases.length,
+    "live-queries": liveQueries.length,
+    "synthetic-dataset": syntheticDatasetCases.length,
     "eval-runs": evalRuns.length,
     "interview-qa": interviewQaCards.length,
   };
@@ -665,6 +713,10 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   );
   const filteredDocs = docs.filter((d) => matches([d.feature_name, d.doc_title, d.doc_type, d.doc_version]));
   const filteredGoldenDatasetCases = goldenDatasetCases.filter((c) => matches([c.case_key, c.dataset, c.category, c.query]));
+  const filteredLiveQueries = liveQueries.filter((q) => matches([q.query_text, q.pipeline, q.request_id, q.employee_id]));
+  const filteredSyntheticDatasetCases = syntheticDatasetCases.filter((c) =>
+    matches([c.case_key, c.dataset, c.category, c.query]),
+  );
   const filteredEvalRuns = evalRuns.filter((r) => matches([r.decision, r.run_at]));
   const interviewQaTopics = Array.from(new Set(interviewQaCards.map((c) => c.topic))).sort();
   const filteredInterviewQaCards = interviewQaCards
@@ -677,11 +729,17 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     "leave-requests": "Search by employee, leave type, or status...",
     docs: "Search by feature, title, type, or version...",
     "golden-dataset": "Search by case key, dataset, category, or query...",
+    "live-queries": "Search by query text, pipeline, request id, or employee...",
+    "synthetic-dataset": "Search by case key, dataset, category, or query...",
     "eval-runs": "Search by decision or date...",
     "interview-qa": "Search by topic or question...",
   };
   const showSharedSearchBar =
-    activeTab !== "documents" && activeTab !== "upload" && activeTab !== "ci-status" && activeTab !== "live-metrics";
+    activeTab !== "documents" &&
+    activeTab !== "upload" &&
+    activeTab !== "ci-status" &&
+    activeTab !== "live-metrics" &&
+    activeTab !== "settings";
 
   function renderWorkflowStatus(status: WorkflowStatus) {
     return (
@@ -1116,6 +1174,96 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           </>
         )}
 
+        {!isLoading && activeTab === "live-queries" && (
+          <>
+            <p className="dev-note-inline">
+              Real production questions, scored by the same live groundedness judge every answer already gets.
+              Queries scoring above the LTM threshold (Settings &rarr; Memory) are promoted to{" "}
+              <code>is_ltm = true</code>. Read-only.
+            </p>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              Filter:{" "}
+              <select
+                value={liveQueryLtmFilter}
+                onChange={(event) => handleLiveQueryLtmFilterChange(event.target.value as "all" | "ltm" | "not-ltm")}
+              >
+                <option value="all">All</option>
+                <option value="ltm">LTM only</option>
+                <option value="not-ltm">Not LTM</option>
+              </select>
+            </label>
+            <div className="documents-table-scroll admin-dashboard-table-scroll">
+              <table className="documents-table">
+                <thead>
+                  <tr>
+                    <th>Query</th>
+                    <th>Pipeline</th>
+                    <th>Eval score</th>
+                    <th>LTM</th>
+                    <th>Captured</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredLiveQueries.map((liveQuery) => (
+                    <tr key={liveQuery.id}>
+                      <td>{liveQuery.query_text}</td>
+                      <td>{liveQuery.pipeline ?? "-"}</td>
+                      <td>{liveQuery.eval_score ?? "-"}</td>
+                      <td>{liveQuery.is_ltm ? "Yes" : "No"}</td>
+                      <td>{new Date(liveQuery.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {liveQueries.length === 0 && <p className="dev-note-inline">No live queries captured yet.</p>}
+              {liveQueries.length > 0 && filteredLiveQueries.length === 0 && (
+                <p className="dev-note-inline">No matches for your search.</p>
+              )}
+            </div>
+          </>
+        )}
+
+        {!isLoading && activeTab === "synthetic-dataset" && (
+          <>
+            <p className="dev-note-inline">
+              Programmatically generated test cases - cheap coverage at scale, lower trust than the hand-verified
+              Golden Dataset. Read-only. Click a row for the full case detail.
+            </p>
+            <div className="documents-table-scroll admin-dashboard-table-scroll">
+              <table className="documents-table">
+                <thead>
+                  <tr>
+                    <th>Case key</th>
+                    <th>Dataset</th>
+                    <th>Category</th>
+                    <th>Query</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSyntheticDatasetCases.map((syntheticCase) => (
+                    <tr
+                      key={syntheticCase.id}
+                      onClick={() => setSelectedSyntheticCase(syntheticCase)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>{syntheticCase.case_key}</td>
+                      <td>{syntheticCase.dataset}</td>
+                      <td>{syntheticCase.category ?? "-"}</td>
+                      <td>{syntheticCase.query ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {syntheticDatasetCases.length === 0 && <p className="dev-note-inline">No synthetic dataset cases yet.</p>}
+              {syntheticDatasetCases.length > 0 && filteredSyntheticDatasetCases.length === 0 && (
+                <p className="dev-note-inline">No matches for your search.</p>
+              )}
+            </div>
+          </>
+        )}
+
+        {!isLoading && activeTab === "settings" && <SettingsPanel userProfile={currentIdentity} />}
+
         {!isLoading && activeTab === "eval-runs" && (
           <>
             <p className="dev-note-inline">
@@ -1273,53 +1421,45 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
             )}
             {!pipelineError && !pipelineStatus && <p className="dev-note-inline">Loading pipeline...</p>}
 
-            {/* Phase 235 - now genuinely scoped by the same Application
-                dropdown as the Pipeline stepper above it (was previously
-                just hidden for every application except backend, a
-                stopgap - see RAG-ROADMAP.md Phase 235).
-                2026-10-19 - the whole section (heading included) is now
-                hidden for `frontend` specifically: the Pipeline section
-                above already shows its own honest "no automated CI/CD"
-                message via PipelineStepper, so repeating the identical
-                sentence a second time under an otherwise-empty "Full run
-                history" heading was pure duplication, not new
-                information - user-reported. */}
-            {selectedApplication !== "frontend" && (
+            {/* Phase 235 - genuinely scoped by the same Application
+                dropdown as the Pipeline stepper above it.
+                Phase 255 - no longer hidden for `frontend`: that 2026-10-19
+                special case existed only because hrb_chatbot_ui had no
+                GitHub Actions workflow at all back then, so this section
+                would've been empty under its own heading. It has a real
+                deploy.yml now and behaves like every other application. */}
+            <h3 style={{ fontSize: 14, margin: "32px 0 12px", paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+              Full run history
+            </h3>
+            {ciStatusError && <p className="error-banner">{ciStatusError}</p>}
+            {!ciStatusError && ciStatus && ciStatus.error && <p className="dev-note-inline">{ciStatus.error}</p>}
+            {!ciStatusError && ciStatus && !ciStatus.error && (
               <>
-                <h3 style={{ fontSize: 14, margin: "32px 0 12px", paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-                  Full run history
-                </h3>
-                {ciStatusError && <p className="error-banner">{ciStatusError}</p>}
-                {!ciStatusError && ciStatus && ciStatus.error && <p className="dev-note-inline">{ciStatus.error}</p>}
-                {!ciStatusError && ciStatus && !ciStatus.error && (
-                  <>
-                    {ciStatus.workflows.map((workflow) => (
-                      <Fragment key={workflow.workflow_file}>{renderWorkflowStatus(workflow)}</Fragment>
-                    ))}
-                    {(ciStatusPage > 1 || ciStatus.workflows.some((workflow) => workflow.has_more)) && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
-                        <button
-                          className="button-secondary"
-                          disabled={ciStatusPage <= 1}
-                          onClick={() => setCiStatusPage((page) => Math.max(1, page - 1))}
-                        >
-                          Previous
-                        </button>
-                        <span className="dev-note-inline">Page {ciStatusPage}</span>
-                        <button
-                          className="button-secondary"
-                          disabled={!ciStatus.workflows.some((workflow) => workflow.has_more)}
-                          onClick={() => setCiStatusPage((page) => page + 1)}
-                        >
-                          Next
-                        </button>
-                      </div>
-                    )}
-                  </>
+                {ciStatus.workflows.map((workflow) => (
+                  <Fragment key={workflow.workflow_file}>{renderWorkflowStatus(workflow)}</Fragment>
+                ))}
+                {(ciStatusPage > 1 || ciStatus.workflows.some((workflow) => workflow.has_more)) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                    <button
+                      className="button-secondary"
+                      disabled={ciStatusPage <= 1}
+                      onClick={() => setCiStatusPage((page) => Math.max(1, page - 1))}
+                    >
+                      Previous
+                    </button>
+                    <span className="dev-note-inline">Page {ciStatusPage}</span>
+                    <button
+                      className="button-secondary"
+                      disabled={!ciStatus.workflows.some((workflow) => workflow.has_more)}
+                      onClick={() => setCiStatusPage((page) => page + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
                 )}
-                {!ciStatusError && !ciStatus && <p className="dev-note-inline">Loading run history...</p>}
               </>
             )}
+            {!ciStatusError && !ciStatus && <p className="dev-note-inline">Loading run history...</p>}
           </>
         )}
 
@@ -1518,6 +1658,24 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
             <pre className="llm-context-pre">{JSON.stringify(selectedGoldenCase.raw_case, null, 2)}</pre>
             <div className="modal-actions">
               <button type="button" onClick={() => setSelectedGoldenCase(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedSyntheticCase && (
+        <div className="modal-overlay" onClick={() => setSelectedSyntheticCase(null)}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <h2>{selectedSyntheticCase.case_key}</h2>
+            <p className="dev-note-inline">
+              Dataset: {selectedSyntheticCase.dataset} &middot; Updated:{" "}
+              {new Date(selectedSyntheticCase.updated_at).toLocaleString()}
+            </p>
+            <pre className="llm-context-pre">{JSON.stringify(selectedSyntheticCase.raw_case, null, 2)}</pre>
+            <div className="modal-actions">
+              <button type="button" onClick={() => setSelectedSyntheticCase(null)}>
                 Close
               </button>
             </div>

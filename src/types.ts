@@ -683,6 +683,51 @@ export interface GoldenDatasetListResponse {
   cases: GoldenDatasetCaseSummary[];
 }
 
+// Phase 1 (hrb_chatbot_service's own Phase 257) - a captured live query,
+// real production traffic whose groundedness score crossed the
+// configurable LTM threshold (or didn't - is_ltm distinguishes the two).
+export interface LiveQuerySummary {
+  id: number;
+  query_text: string;
+  answer_text: string | null;
+  pipeline: string | null;
+  request_id: string | null;
+  employee_id: string | null;
+  eval_score: number | null;
+  is_ltm: boolean;
+  category: string | null;
+  created_at: string;
+}
+
+export interface LiveQueryListResponse {
+  count: number;
+  queries: LiveQuerySummary[];
+}
+
+// Phase 1 - a synthetic (generated) test case, same shape as
+// GoldenDatasetCaseSummary deliberately.
+export interface SyntheticDatasetCaseSummary {
+  id: number;
+  case_key: string;
+  dataset: string;
+  category: string | null;
+  query: string | null;
+  raw_case: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyntheticDatasetListResponse {
+  count: number;
+  cases: SyntheticDatasetCaseSummary[];
+}
+
+// Phase 1 - a single runtime app_settings value.
+export interface AppSettingResponse {
+  key: string;
+  value: number | string | boolean;
+}
+
 // Phase 182 - Deployment Dashboard's Eval Runs history, persisted by
 // scripts/run_release_gate.py on every real run.
 export interface EvalRunSummary {
@@ -872,27 +917,32 @@ export interface PipelineWorkflowRun {
   jobs: PipelineJobDetail[];
 }
 
-// Phase 233 - which of this project's real deployables the Pipeline
-// stepper is showing. BACKEND/INGESTION_LAMBDA share one GitHub repo
-// (hrb_chatbot_v2) but are different workflow files/deploy targets;
-// LMS_MCP is a genuinely separate repo; FRONTEND has no GitHub Actions
-// workflow at all - deployed manually, shown as a plain message via the
-// existing `error` field, not a fabricated pipeline view.
-export type Application = "backend" | "ingestion_lambda" | "lms_mcp" | "frontend";
+// Phase 255 - which of this project's real deployables the Pipeline
+// stepper is showing, rebuilt for the real 7-repo split (Phase 233's
+// original 4-member set predates it - see RAG-ROADMAP.md Phase 255 for
+// the live-verified repo/workflow facts behind this). INGESTION_LAMBDA is
+// gone as its own member: hrb_chatbot_service's own deploy-lambda.yml is
+// confirmed retired (disabled SQS trigger), superseded by RAG_INGESTION's
+// own live Lambda. BACKEND/LMS_MCP are unchanged from Phase 233.
+export type Application =
+  | "frontend"
+  | "gateway"
+  | "backend"
+  | "rag_ingestion"
+  | "rag_retrieval"
+  | "platform_components"
+  | "common_libs"
+  | "lms_mcp";
 
-// 2026-10-19 - user-requested rename, with 2 of the 4 adjusted from what
-// was asked: "RAG Search" for the backend and plain "RAG Ingestion" for
-// the Lambda would have implied a clean search/ingestion split across
-// the two that doesn't exist - the backend's own synchronous path is
-// still the PRIMARY way documents get indexed today, confirmed by
-// reading ai/doc_processing/pipeline.py; the Lambda is the async
-// alternative, not ingestion's only home. User confirmed these
-// alternatives after that was flagged.
 export const APPLICATION_LABELS: Record<Application, string> = {
-  backend: "HRB Chatbot Backend",
-  ingestion_lambda: "HRB Chatbot Async Ingestion",
-  lms_mcp: "HRB LMS MCP Server",
   frontend: "HRB Chatbot UI",
+  gateway: "HRB API Gateway",
+  backend: "HRB Chatbot Backend",
+  rag_ingestion: "RAG Ingestion Service",
+  rag_retrieval: "RAG Retrieval Service",
+  platform_components: "HRB Platform Components",
+  common_libs: "HRB Common Libs",
+  lms_mcp: "HRB LMS MCP Server",
 };
 
 export interface PipelineStatusResponse {

@@ -10,6 +10,7 @@ import type {
   AdminDocContentResponse,
   AdminDocListResponse,
   AgenticRagResponse,
+  AppSettingResponse,
   ConversationDetailResponse,
   ConversationListResponse,
   DocumentListResponse,
@@ -34,6 +35,7 @@ import type {
   LeaveDocumentDownloadUrlResponse,
   LeaveDocumentUploadUrlResponse,
   LeaveTypeCode,
+  LiveQueryListResponse,
   MultiAgenticRagResponse,
   MyLeaveRequestsResponse,
   PendingHitlRequestsResponse,
@@ -43,6 +45,7 @@ import type {
   PublishedFaqListResponse,
   RagQueryResponse,
   ResolveHitlRequestResponse,
+  SyntheticDatasetListResponse,
   UnpaidLeaveRequestResponse,
   UserProfile,
 } from "../types";
@@ -887,6 +890,74 @@ export async function listGoldenDataset(userProfile: UserProfile): Promise<Golde
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as GoldenDatasetListResponse;
+}
+
+// Phase 1 - real production queries captured when their live groundedness
+// score crossed the configurable LTM threshold (or didn't - isLtm filters).
+export async function listLiveQueries(userProfile: UserProfile, isLtm?: boolean): Promise<LiveQueryListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  if (isLtm !== undefined) {
+    params.set("is_ltm", String(isLtm));
+  }
+  const response = await fetch(`${API_BASE_URL}/v1/admin/live-queries?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as LiveQueryListResponse;
+}
+
+// Phase 1 - programmatically generated test cases, distinct from the
+// hand-curated golden dataset above.
+export async function listSyntheticDataset(userProfile: UserProfile): Promise<SyntheticDatasetListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/synthetic-dataset?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as SyntheticDatasetListResponse;
+}
+
+// Phase 1 - a generic runtime setting's current value. 404 means the key
+// was never set - caller shows that field's own documented default.
+export async function getAppSetting(userProfile: UserProfile, key: string): Promise<AppSettingResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/app-settings/${key}?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AppSettingResponse;
+}
+
+export async function updateAppSetting(
+  userProfile: UserProfile,
+  key: string,
+  value: number | string | boolean,
+): Promise<AppSettingResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/app-settings/${key}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile, value }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AppSettingResponse;
 }
 
 export async function listEvalRuns(userProfile: UserProfile): Promise<EvalRunListResponse> {

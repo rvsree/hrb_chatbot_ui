@@ -1,9 +1,23 @@
 # HRB Chatbot UI
 
 React + TypeScript + Vite frontend for `hrb_chatbot_service` (a separate repo,
-deliberately - see `hrb_chatbot_service/docs/dev-reference/deployment-guide/
-07-reactjs-ui.html`). Deploys to S3 + CloudFront, not App Runner - its own
-build/deploy pipeline, decoupled from the backend's.
+deliberately - see
+[`hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/deployment-guide/07-reactjs-ui.html`](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/deployment-guide/07-reactjs-ui.html)).
+Deploys to S3 + CloudFront, not App Runner - its own build/deploy pipeline,
+decoupled from the backend's.
+
+## Diagrams and cross-service docs
+
+[Current state architecture](../docs/architecture/diagrams/hrb-chatbot-ui-current-state-architecture.drawio)
+(editable `.drawio`) - the 12 real pages and the one API client they share.
+No target-state or `.drawio` deployment diagram exists for this repo yet -
+a static SPA behind CloudFront doesn't have the same scaling story the
+backend services do; see the
+[build process](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/build-and-deploy/01a-hrb-chatbot-ui-build-process.html)
+and
+[deployment architecture](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/build-and-deploy/01b-hrb-chatbot-ui-deployment-architecture.html)
+HTML docs instead. For the cross-service picture, start at
+[`platform-overview.html`](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/architecture/platform-overview.html).
 
 ## Environments
 
@@ -100,9 +114,11 @@ than describing what the screen looked like.
 ## What's real vs. mocked
 
 Built against `hrb_chatbot_service`'s actual API contracts, not invented ones -
-see that repo's `docs/dev-reference/ui-wireframes-review.html` for the
-original audit. Updated 2026-10-07 - two of the three gaps that audit found
-have since been closed:
+see that repo's
+[`docs/dev-reference/_archive/ui-wireframes-review.html`](../hrb_chatbot_service/docs/dev-reference/_archive/ui-wireframes-review.html)
+for the original audit (archived 2026-10-23 - pre-build material, not
+stale information, kept for the real history). Updated 2026-10-07 - two of
+the three gaps that audit found have since been closed:
 
 - **Login** validates `employee_id`/`full_name`/`role` against a small
   fixed roster on the backend (`POST /v1/auth/login`, Phase 106) - denies

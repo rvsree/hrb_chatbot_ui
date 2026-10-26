@@ -249,15 +249,13 @@ export default function PipelineStepper({
   }
 
   if (pipeline.error) {
-    // 2026-10-19 - user-reported: this looked like a real failure (red
-    // error-banner) even for `frontend`, where it's never one - that
-    // branch of get_ci_pipeline_status() always returns the same fixed,
+    // Phase 255 - the `frontend`-only quiet treatment this used to have
+    // (2026-10-19) is gone: that branch existed only because frontend's
+    // own get_ci_pipeline_status() path always returned the same fixed,
     // expected "deployed manually" message, never a real GitHub-side
-    // error. Every OTHER application's own `error` here is a genuine
-    // GitHub-side failure, so only `frontend` gets the quieter treatment.
-    if (application === "frontend") {
-      return <p className="dev-note-inline">{pipeline.error}</p>;
-    }
+    // error. hrb_chatbot_ui has a real deploy.yml now, so an `error` here
+    // for `frontend` is a genuine GitHub-side failure too, same as every
+    // other application - it gets the same red error-banner treatment.
     return <p className="error-banner">{pipeline.error}</p>;
   }
   if (pipeline.runs.length === 0) {
@@ -440,15 +438,16 @@ export default function PipelineStepper({
   return (
     <div className={`pipeline-dashboard pipeline-app-${application}`}>
       {/* 2026-10-19 - user-reported: this showed as all-gray/empty for
-          ingestion_lambda (and would for lms_mcp too) - correctly so,
-          since every one of these 8 labels is resolved against ci.yml's/
-          deploy.yml's own specific job and step names (see phaseResults
-          above), which simply don't exist in deploy-lambda.yml's own very
-          different single job. Rather than fake-mapping an unrelated
-          workflow's real steps onto these 8 backend-specific labels, this
-          summary only shows for backend - the detailed per-job/per-step
-          cards below it already show every other application's own real
-          data accurately. */}
+          the old ingestion_lambda application (and would for any other
+          non-backend application too) - correctly so, since every one of
+          these 8 labels is resolved against ci.yml's/deploy.yml's own
+          specific job and step names (see phaseResults above), which
+          simply don't exist in rag_ingestion's deploy-lambda.yml (a very
+          different single job) or in any other application's own
+          workflow. Rather than fake-mapping an unrelated workflow's real
+          steps onto these 8 backend-specific labels, this summary only
+          shows for backend - the detailed per-job/per-step cards below it
+          already show every other application's own real data accurately. */}
       {application === "backend" && (
         <div className="phase-bar-section">
           <span className="phase-bar-section-label">At-a-glance summary</span>
@@ -565,10 +564,11 @@ export default function PipelineStepper({
 
       {/* 2026-10-19 - user-requested: the eval-gate workflow itself is
           scoped to backend only (see eval_run_store's own backend-only
-          note elsewhere in this project) - showing this section for
-          ingestion_lambda/lms_mcp/frontend would always read "not run for
-          this commit" for a gate that was never going to run against
-          their commits in the first place, not a genuine absence. */}
+          note elsewhere in this project) - showing this section for any
+          other application would always read "not run for this commit"
+          for a gate that was never going to run against their commits in
+          the first place, not a genuine absence. Phase 255 kept this
+          restriction as-is across all the newly-added applications too. */}
       {application === "backend" && (
         <>
           <div className="pipeline-run-connector">&darr;</div>
