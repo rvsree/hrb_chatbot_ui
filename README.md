@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite frontend for `hrb_chatbot_service` (a separate repo,
 deliberately - see
-[`hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/deployment-guide/07-reactjs-ui.html`](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/deployment-guide/07-reactjs-ui.html)).
+[`hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/deployment-guide/07-reactjs-ui.html`](../docs/deployment-and-ops/deployment-guide/07-reactjs-ui.html)).
 Deploys to S3 + CloudFront, not App Runner - its own build/deploy pipeline,
 decoupled from the backend's.
 
@@ -29,11 +29,11 @@ decoupled from the backend's.
 No target-state or `.drawio` deployment diagram exists for this repo yet -
 a static SPA behind CloudFront doesn't have the same scaling story the
 backend services do; see the
-[build process](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/build-and-deploy/01a-hrb-chatbot-ui-build-process.html)
+[build process](../docs/deployment-and-ops/build-and-deploy/01a-hrb-chatbot-ui-build-process.html)
 and
-[deployment architecture](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/build-and-deploy/01b-hrb-chatbot-ui-deployment-architecture.html)
+[deployment architecture](../docs/deployment-and-ops/build-and-deploy/01b-hrb-chatbot-ui-deployment-architecture.html)
 HTML docs instead. For the cross-service picture, start at
-[`platform-overview.html`](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/architecture/platform-overview.html).
+[`platform-overview.html`](../docs/architecture/platform-overview.html).
 
 ## Environments
 
