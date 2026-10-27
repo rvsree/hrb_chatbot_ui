@@ -6,17 +6,29 @@ deliberately - see
 Deploys to S3 + CloudFront, not App Runner - its own build/deploy pipeline,
 decoupled from the backend's.
 
+## Live demo
+
+**[hrb-chatbot-ui.rvsree.dev](https://hrb-chatbot-ui.rvsree.dev)** - log in as any
+persona from `hrb_chatbot_service/docs/agent-reference/KNOWN-PERSONAS.md`
+(e.g. `EMP052` / Eddy Employee / employee), then ask a benefits question, check
+a leave balance, or file an unpaid-leave request to see the HITL workflow end
+to end. Backend App Runner services (`hrb_chatbot_service`,
+`hrb_api_gateway_service`, `hrb_lms_mcp`) pause by default for cost control -
+if the first request hangs rather than failing outright, they're spinning
+back up (~30-60s cold start), not broken; see the platform's own
+`PLATFORM-HANDOFF.md` for the pause/resume script.
+
 ## What this repo demonstrates
 
-- **Real explainability UI** - every answer's citations, retrieval sources,
+- **Full explainability UI** - every answer's citations, retrieval sources,
   token usage, latency breakdown, and live groundedness verdict are
   rendered, not just the chat text.
 - **Admin surface** beyond the chat itself: conversations, feedback, HITL
   leave-approvals, live-query/synthetic-dataset viewers, CI/CD pipeline
-  status, and a runtime Settings page - all against the real backend APIs.
-- **Real HITL workflow UI** - the unpaid-leave request/approval flow, not
-  just a chat transcript.
-- **Cut over to the real API Gateway** (2026-10-23), not calling the
+  status, and a runtime Settings page - all against the live backend APIs.
+- **End-to-end HITL workflow UI** - the unpaid-leave request/approval
+  flow, not just a chat transcript.
+- **Cut over to the API Gateway** (2026-10-23), not calling the
   backend directly - CORS/RBAC/rate-limiting all flow through one entry
   point, confirmed working live.
 - **Playwright e2e coverage** (`e2e/`) against the real deployed stack, not
@@ -25,7 +37,7 @@ decoupled from the backend's.
 ## Diagrams and cross-service docs
 
 [Current state architecture](../docs/architecture/diagrams/hrb-chatbot-ui-current-state-architecture.drawio)
-(editable `.drawio`) - the 12 real pages and the one API client they share.
+(editable `.drawio`) - the 12 pages and the one API client they share.
 No target-state or `.drawio` deployment diagram exists for this repo yet -
 a static SPA behind CloudFront doesn't have the same scaling story the
 backend services do; see the
@@ -59,7 +71,7 @@ CORS allow-list and `/health` response shape were already built (Phases
 The AWS frontend is a static `npm run build` output synced to an S3 bucket
 (`hrb-chatbot-ui-rvsree`) behind a CloudFront distribution with a Route53
 alias - provisioned manually via the AWS CLI (2026-10-07), sitting unused
-until **2026-10-23**, when a fresh build was pushed live and a real CI/CD
+until **2026-10-23**, when a fresh build was pushed live and a CI/CD
 pipeline (`.github/workflows/deploy.yml`, a scoped
 `hrb-chatbot-ui-github-actions-deploy` IAM user) was wired up - every push
 to `master` now rebuilds, syncs to S3, and invalidates CloudFront
@@ -118,7 +130,7 @@ on 5173. Close that old terminal, or just use a different port:
 | `vite.config.ts` | dev-server/startup config (port, plugins) |
 | `tsconfig.json` | compiler settings (target framework, language version) |
 | `.env` | `appsettings.Development.json` |
-| `src/main.tsx` | `Program.cs` - the real entry point |
+| `src/main.tsx` | `Program.cs` - the entry point |
 | `src/App.tsx` | where routes are registered - `Startup.cs`'s `UseEndpoints` |
 | `node_modules/` | `bin/`/`obj/` - generated, gitignored, ignore it |
 
@@ -133,7 +145,7 @@ Built against `hrb_chatbot_service`'s actual API contracts, not invented ones -
 see that repo's
 [`docs/dev-reference/_archive/ui-wireframes-review.html`](../hrb_chatbot_service/docs/dev-reference/_archive/ui-wireframes-review.html)
 for the original audit (archived 2026-10-23 - pre-build material, not
-stale information, kept for the real history). Updated 2026-10-07 - two of
+stale information, kept for the historical record). Updated 2026-10-07 - two of
 the three gaps that audit found have since been closed:
 
 - **Login** validates `employee_id`/`full_name`/`role` against a small
@@ -148,7 +160,7 @@ the three gaps that audit found have since been closed:
 - **Feedback** ("Helpful"/"Not quite") is persisted for real
   (`POST`/`GET /v1/feedback`, Phase 104) - `ViewFeedbackPage.tsx` (route
   `/feedback`) lists it back out. The **explainability** popup's
-  cost-in-dollars field is still the one real gap left - token/latency/
+  cost-in-dollars field is still the one gap left - token/latency/
   cache-vs-live/eval-score fields are all real, cost is explicitly
   excluded (tracked in `hrb_chatbot_service`'s own `BACKLOG.md`).
 

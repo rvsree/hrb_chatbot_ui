@@ -149,7 +149,7 @@ test.describe("state management - conversation survives a reload", () => {
     // only cares about persistence, so the fastest real mode is enough.
     await selectMode(page, "genai-rag");
 
-    const question = "What percentage does JPMorgan Chase match on my 401(k) contributions?";
+    const question = "What percentage does Amazing Bank match on my 401(k) contributions?";
     const firstAnswer = await sendTurn(page, question);
     expect(matchesAny(firstAnswer, ["100%", "dollar-for-dollar", "5%"])).toBe(true);
 
