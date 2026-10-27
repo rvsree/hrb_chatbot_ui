@@ -18,6 +18,49 @@ if the first request hangs rather than failing outright, they're spinning
 back up (~30-60s cold start), not broken; see the platform's own
 `PLATFORM-HANDOFF.md` for the pause/resume script.
 
+## Tech Stack
+
+```mermaid
+flowchart TD
+    HUB((hrb_chatbot_ui))
+    HUB --> FW[Framework / Build]
+    HUB --> RT[Routing]
+    HUB --> STATE[State]
+    HUB --> ST[Styling]
+    HUB --> TEST[Testing]
+    HUB --> DEP[Deployment]
+
+    FW --> FW1[React 19]
+    FW --> FW2[Vite 8]
+    FW --> FW3[TypeScript]
+    RT --> RT1[react-router-dom v7]
+    STATE --> S1[React Context]
+    ST --> ST1[Plain CSS]
+    TEST --> T1[Playwright e2e]
+    DEP --> D1[AWS S3]
+    DEP --> D2[CloudFront]
+
+    classDef hub fill:#4C1D95,color:#fff,stroke:#2E1065,stroke-width:2px
+    classDef fw fill:#1D4ED8,color:#fff,stroke:#1E3A8A
+    classDef rt fill:#047857,color:#fff,stroke:#064E3B
+    classDef state fill:#0E7490,color:#fff,stroke:#164E63
+    classDef st fill:#B45309,color:#fff,stroke:#78350F
+    classDef test fill:#BE185D,color:#fff,stroke:#831843
+    classDef dep fill:#475569,color:#fff,stroke:#1E293B
+    class HUB hub
+    class FW,FW1,FW2,FW3 fw
+    class RT,RT1 rt
+    class STATE,S1 state
+    class ST,ST1 st
+    class TEST,T1 test
+    class DEP,D1,D2 dep
+```
+
+No state-management library (Redux/Zustand) or HTTP client library (axios) -
+just React Context (`src/context/IdentityContext.tsx`) and the native
+`fetch` API. No CSS framework either - plain `.css` files
+(`src/App.css`, `src/index.css`).
+
 ## What this repo demonstrates
 
 - **Full explainability UI** - every answer's citations, retrieval sources,
