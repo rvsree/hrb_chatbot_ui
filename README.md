@@ -6,6 +6,22 @@ deliberately - see
 Deploys to S3 + CloudFront, not App Runner - its own build/deploy pipeline,
 decoupled from the backend's.
 
+## What this repo demonstrates
+
+- **Real explainability UI** - every answer's citations, retrieval sources,
+  token usage, latency breakdown, and live groundedness verdict are
+  rendered, not just the chat text.
+- **Admin surface** beyond the chat itself: conversations, feedback, HITL
+  leave-approvals, live-query/synthetic-dataset viewers, CI/CD pipeline
+  status, and a runtime Settings page - all against the real backend APIs.
+- **Real HITL workflow UI** - the unpaid-leave request/approval flow, not
+  just a chat transcript.
+- **Cut over to the real API Gateway** (2026-10-23), not calling the
+  backend directly - CORS/RBAC/rate-limiting all flow through one entry
+  point, confirmed working live.
+- **Playwright e2e coverage** (`e2e/`) against the real deployed stack, not
+  just unit tests against mocks.
+
 ## Diagrams and cross-service docs
 
 [Current state architecture](../docs/architecture/diagrams/hrb-chatbot-ui-current-state-architecture.drawio)
