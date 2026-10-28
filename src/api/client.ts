@@ -11,6 +11,7 @@ import type {
   AdminDocListResponse,
   AgenticRagResponse,
   AppSettingResponse,
+  AwsDemoStatusResponse,
   ConversationDetailResponse,
   ConversationListResponse,
   DocumentListResponse,
@@ -1271,4 +1272,51 @@ export async function deleteInterviewQaCard(userProfile: UserProfile, cardId: nu
   if (!response.ok) {
     await parseErrorAndThrow(response);
   }
+}
+
+// Phase 261 - "AWS Demo" Settings tab.
+export async function getAwsDemoStatus(userProfile: UserProfile): Promise<AwsDemoStatusResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/aws-demo/status?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AwsDemoStatusResponse;
+}
+
+export async function resumeAwsDemoServices(
+  userProfile: UserProfile,
+  serviceNames?: string[],
+): Promise<AwsDemoStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/aws-demo/resume`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile, service_names: serviceNames ?? null }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AwsDemoStatusResponse;
+}
+
+export async function pauseAwsDemoServices(
+  userProfile: UserProfile,
+  serviceNames?: string[],
+): Promise<AwsDemoStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/aws-demo/pause`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile, service_names: serviceNames ?? null }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AwsDemoStatusResponse;
 }

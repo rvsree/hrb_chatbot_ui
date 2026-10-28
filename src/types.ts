@@ -969,3 +969,20 @@ export interface PipelineSnapshotListResponse {
   count: number;
   snapshots: PipelineSnapshotSummary[];
 }
+
+// Phase 261 - "AWS Demo" Settings tab: manual Start/Pause/Status control
+// over this platform's own App Runner services. status is whatever AWS
+// itself reports verbatim (RUNNING/PAUSED/OPERATION_IN_PROGRESS/ERROR/
+// etc.) - not remapped client-side either, same reasoning as the backend
+// contract.
+export interface AwsDemoServiceStatus {
+  service_name: string;
+  display_name: string;
+  status: string;
+  url: string | null;
+  error: string | null;
+}
+
+export interface AwsDemoStatusResponse {
+  services: AwsDemoServiceStatus[];
+}

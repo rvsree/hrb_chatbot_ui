@@ -25,6 +25,7 @@ import {
 } from "../api/client";
 import AdminConversationModal from "../components/AdminConversationModal";
 import AdminFeedbackModal from "../components/AdminFeedbackModal";
+import AwsDemoPanel from "../components/AwsDemoPanel";
 import HelpPopover from "../components/HelpPopover";
 import InterviewQaCardView from "../components/InterviewQaCardView";
 import InterviewQaEditorModal from "../components/InterviewQaEditorModal";
@@ -70,6 +71,7 @@ type AdminTab =
   | "ci-status"
   | "live-metrics"
   | "settings"
+  | "aws-demo"
   | "interview-qa";
 
 // "documents"/"upload" render the real DocumentsPage/UploadPage components
@@ -92,6 +94,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   "ci-status": "CI/CD Pipeline",
   "live-metrics": "Live Metrics",
   settings: "Settings",
+  "aws-demo": "AWS Demo",
   "interview-qa": "Interview Q&A",
 };
 
@@ -137,7 +140,7 @@ const CATEGORY_TABS: Record<AdminCategory, AdminTab[]> = {
   // interview-qa-ref below, since it's reference content (the 40 test
   // case definitions themselves), not pipeline execution history. Eval
   // Runs stays here - that one really is CI/CD execution history.
-  "build-deploy": ["ci-status", "eval-runs", "live-metrics", "settings"],
+  "build-deploy": ["ci-status", "eval-runs", "live-metrics", "settings", "aws-demo"],
   // Phase 1 - live-queries/synthetic-dataset join golden-dataset here for
   // the same reason it's here: reference/dataset content, not pipeline
   // execution history (the category's own label is a pre-existing naming
@@ -739,7 +742,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     activeTab !== "upload" &&
     activeTab !== "ci-status" &&
     activeTab !== "live-metrics" &&
-    activeTab !== "settings";
+    activeTab !== "settings" &&
+    activeTab !== "aws-demo";
 
   function renderWorkflowStatus(status: WorkflowStatus) {
     return (
@@ -1263,6 +1267,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
         )}
 
         {!isLoading && activeTab === "settings" && <SettingsPanel userProfile={currentIdentity} />}
+
+        {!isLoading && activeTab === "aws-demo" && <AwsDemoPanel userProfile={currentIdentity} />}
 
         {!isLoading && activeTab === "eval-runs" && (
           <>

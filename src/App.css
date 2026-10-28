@@ -2219,9 +2219,17 @@ button.doc-link-popover-item:hover {
 }
 .status-badge.status-failure,
 .status-badge.status-cancelled,
-.status-badge.status-action_required {
+.status-badge.status-action_required,
+.status-badge.status-error {
   background: var(--danger-soft);
   color: var(--danger);
+}
+/* Phase 261 - AWS Demo tab: PAUSED is an expected resting state, not a
+   failure or an in-progress state, so it gets its own neutral styling
+   rather than reusing danger/info. */
+.status-badge.status-paused {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
 }
 
 .pipeline-run {
