@@ -4,18 +4,22 @@ import {
   ApiRequestError,
   deleteConversationAdmin,
   deleteFeedbackAdmin,
+  deleteDemoVisitor,
   deleteInterviewQaCard,
   deleteLeaveRequestAdmin,
+  deleteLiveQuery,
   getAdminDocContent,
   getCiStatus,
   getEvalRun,
   getPipelineSnapshot,
   getPipelineStatus,
   getRequestMetrics,
+  grantDemoWaiver,
   listAdminDocs,
   listAllConversationsAdmin,
   listAllFeedbackAdmin,
   listAllLeaveRequests,
+  listDemoVisitors,
   listEvalRuns,
   listGoldenDataset,
   listInterviewQaCards,
@@ -24,6 +28,7 @@ import {
   listSyntheticDataset,
 } from "../api/client";
 import AdminConversationModal from "../components/AdminConversationModal";
+import CopyButton from "../components/CopyButton";
 import AdminFeedbackModal from "../components/AdminFeedbackModal";
 import AwsDemoPanel from "../components/AwsDemoPanel";
 import HelpPopover from "../components/HelpPopover";
@@ -31,7 +36,6 @@ import InterviewQaCardView from "../components/InterviewQaCardView";
 import InterviewQaEditorModal from "../components/InterviewQaEditorModal";
 import LeaveReviewModal from "../components/LeaveReviewModal";
 import PipelineStepper from "../components/PipelineStepper";
-import SettingsPanel from "../components/SettingsPanel";
 import DocumentsPage from "./DocumentsPage";
 import UploadPage from "./UploadPage";
 import { useIdentity } from "../context/IdentityContext";
@@ -42,6 +46,7 @@ import {
   type AdminDocSummary,
   type Application,
   type CiStatusResponse,
+  type DemoVisitorSummary,
   type EvalRunDetail,
   type EvalRunSummary,
   type FeedbackRecord,
@@ -67,10 +72,10 @@ type AdminTab =
   | "golden-dataset"
   | "live-queries"
   | "synthetic-dataset"
+  | "demo-visitors"
   | "eval-runs"
   | "ci-status"
   | "live-metrics"
-  | "settings"
   | "aws-demo"
   | "interview-qa";
 
@@ -90,10 +95,10 @@ const TAB_LABELS: Record<AdminTab, string> = {
   "golden-dataset": "Golden Dataset",
   "live-queries": "Live Queries",
   "synthetic-dataset": "Synthetic Dataset",
+  "demo-visitors": "Demo Visitors",
   "eval-runs": "Eval Runs",
   "ci-status": "CI/CD Pipeline",
   "live-metrics": "Live Metrics",
-  settings: "Settings",
   "aws-demo": "AWS Demo",
   "interview-qa": "Interview Q&A",
 };
@@ -106,6 +111,7 @@ const COUNTED_TABS = [
   "golden-dataset",
   "live-queries",
   "synthetic-dataset",
+  "demo-visitors",
   "eval-runs",
   "interview-qa",
 ] as const;
@@ -129,7 +135,10 @@ const CATEGORY_LABELS: Record<AdminCategory, string> = {
   admin: "Admin",
   "hr-ops": "HR Ops",
   "build-deploy": "Build & Deployment",
-  "interview-qa-ref": "Interview Q&A",
+  // Phase 3 - was "Interview Q&A"; 4 of this category's 5 children are
+  // reference docs/datasets, not interview content (the key itself,
+  // "interview-qa-ref", stays unchanged - only the displayed label moves).
+  "interview-qa-ref": "Reference & Datasets",
 };
 
 const CATEGORY_TABS: Record<AdminCategory, AdminTab[]> = {
@@ -140,7 +149,14 @@ const CATEGORY_TABS: Record<AdminCategory, AdminTab[]> = {
   // interview-qa-ref below, since it's reference content (the 40 test
   // case definitions themselves), not pipeline execution history. Eval
   // Runs stays here - that one really is CI/CD execution history.
-  "build-deploy": ["ci-status", "eval-runs", "live-metrics", "settings", "aws-demo"],
+  // Phase 2 - demo-visitors joins aws-demo here: operational/security
+  // monitoring (who's using the live demo, cost-cap status), not
+  // reference content like golden-dataset/live-queries below. Phase 5 -
+  // "settings" (Model/Memory/Resiliency) moved out of this dashboard
+  // entirely, into the main chat UI's own Settings modal (ChatPage.tsx) -
+  // user-directed; it was never really Build & Deployment content, and a
+  // single-tab category just for it was itself a Phase 4 stopgap.
+  "build-deploy": ["ci-status", "eval-runs", "live-metrics", "aws-demo", "demo-visitors"],
   // Phase 1 - live-queries/synthetic-dataset join golden-dataset here for
   // the same reason it's here: reference/dataset content, not pipeline
   // execution history (the category's own label is a pre-existing naming
@@ -158,6 +174,34 @@ function categoryForTab(tab: AdminTab): AdminCategory {
     }
   }
   return "admin";
+}
+
+// Phase 3 - Build & Deployment's 6 tabs had drifted into mixing 3 unrelated
+// concerns (pipeline execution history, runtime config, live-demo controls)
+// because each was added one at a time across sessions and never revisited
+// together. A mid-level cluster row, scoped to this one category only - the
+// other 3 categories stay flat, 1 level, no cluster concept for them.
+type BuildDeployCluster = "pipeline-observability" | "demo-management";
+
+const BUILD_DEPLOY_CLUSTER_LABELS: Record<BuildDeployCluster, string> = {
+  "pipeline-observability": "Pipeline & Observability",
+  "demo-management": "Demo Management",
+};
+
+const BUILD_DEPLOY_CLUSTERS: Record<BuildDeployCluster, AdminTab[]> = {
+  "pipeline-observability": ["ci-status", "eval-runs", "live-metrics"],
+  "demo-management": ["aws-demo", "demo-visitors"],
+};
+
+const BUILD_DEPLOY_CLUSTER_ORDER: BuildDeployCluster[] = ["pipeline-observability", "demo-management"];
+
+function clusterForBuildDeployTab(tab: AdminTab): BuildDeployCluster {
+  for (const cluster of BUILD_DEPLOY_CLUSTER_ORDER) {
+    if (BUILD_DEPLOY_CLUSTERS[cluster].includes(tab)) {
+      return cluster;
+    }
+  }
+  return "pipeline-observability";
 }
 
 // Phase 184 - curated fine-tune-recommendation text per metric, for the
@@ -207,6 +251,10 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       : "documents";
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
   const [activeCategory, setActiveCategory] = useState<AdminCategory>(standaloneCategory ?? categoryForTab(initialTab));
+  // Phase 3 - which Build & Deployment cluster is expanded; computed from
+  // a deep-linked initialTab so e.g. ?tab=demo-visitors lands with "Demo
+  // Management" already expanded, not a mismatched default cluster.
+  const [buildDeployCluster, setBuildDeployCluster] = useState<BuildDeployCluster>(clusterForBuildDeployTab(initialTab));
   const [searchQuery, setSearchQuery] = useState("");
   const [conversations, setConversations] = useState<AdminConversationSummary[]>([]);
   const [feedback, setFeedback] = useState<FeedbackRecord[]>([]);
@@ -216,6 +264,9 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   const [liveQueries, setLiveQueries] = useState<LiveQuerySummary[]>([]);
   const [liveQueryLtmFilter, setLiveQueryLtmFilter] = useState<"all" | "ltm" | "not-ltm">("all");
   const [syntheticDatasetCases, setSyntheticDatasetCases] = useState<SyntheticDatasetCaseSummary[]>([]);
+  const [demoVisitors, setDemoVisitors] = useState<DemoVisitorSummary[]>([]);
+  const [grantingWaiverIds, setGrantingWaiverIds] = useState<Set<string>>(new Set());
+  const [grantWaiverError, setGrantWaiverError] = useState<string | null>(null);
   const [evalRuns, setEvalRuns] = useState<EvalRunSummary[]>([]);
   const [ciStatus, setCiStatus] = useState<CiStatusResponse | null>(null);
   const [ciStatusError, setCiStatusError] = useState<string | null>(null);
@@ -246,7 +297,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   // there's no stored history for the others to view.
   const [selectedApplication, setSelectedApplication] = useState<Application>("backend");
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [errorsByTab, setErrorsByTab] = useState<Partial<Record<AdminTab, string>>>({});
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [openingDocId, setOpeningDocId] = useState<number | null>(null);
@@ -263,6 +314,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   const [checkedConversationIds, setCheckedConversationIds] = useState<Set<string>>(new Set());
   const [checkedFeedbackIds, setCheckedFeedbackIds] = useState<Set<number>>(new Set());
   const [checkedLeaveRequestIds, setCheckedLeaveRequestIds] = useState<Set<number>>(new Set());
+  const [checkedLiveQueryIds, setCheckedLiveQueryIds] = useState<Set<number>>(new Set());
+  const [checkedDemoVisitorIds, setCheckedDemoVisitorIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!identity || (identity.role !== "admin" && identity.role !== "employee_admin")) {
@@ -450,9 +503,24 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     return `${label}: ${detail}`;
   }
 
+  // Phase 4 - per-tab, not one global string. Was a single `error` shown
+  // unconditionally at the top of every tab regardless of which data
+  // source actually failed - a leave-requests failure read as broken on
+  // every other tab too, confirmed live via screenshots showing it on
+  // Build & Deployment. Every failureMessage() call below maps to exactly
+  // one real AdminTab, so this is a precise lookup, not a guess.
+  function recordTabError(
+    errors: Partial<Record<AdminTab, string>>, tab: AdminTab, label: string, result: PromiseSettledResult<unknown>,
+  ) {
+    const message = failureMessage(label, result);
+    if (message) {
+      errors[tab] = message;
+    }
+  }
+
   async function refresh() {
     setIsLoading(true);
-    setError(null);
+    setErrorsByTab({});
     // allSettled, not all - one tab's fetch failing (e.g. leave requests
     // when hrb_lms_mcp is down) must not blank out the other tabs'
     // already-successful data. Confirmed live: Promise.all's fail-fast
@@ -471,6 +539,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       goldenDatasetResult,
       liveQueriesResult,
       syntheticDatasetResult,
+      demoVisitorsResult,
       evalRunsResult,
       metricsResult,
       interviewQaResult,
@@ -484,6 +553,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
         ? listLiveQueries(currentIdentity, liveQueryLtmFilter === "all" ? undefined : liveQueryLtmFilter === "ltm")
         : Promise.resolve({ count: 0, queries: [] }),
       isEngineeringAdmin ? listSyntheticDataset(currentIdentity) : Promise.resolve({ count: 0, cases: [] }),
+      isEngineeringAdmin ? listDemoVisitors(currentIdentity) : Promise.resolve({ count: 0, visitors: [] }),
       isEngineeringAdmin ? listEvalRuns(currentIdentity) : Promise.resolve({ count: 0, runs: [] }),
       isEngineeringAdmin
         ? getRequestMetrics(currentIdentity, metricsWindowHours)
@@ -512,6 +582,9 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     if (syntheticDatasetResult.status === "fulfilled") {
       setSyntheticDatasetCases(syntheticDatasetResult.value.cases);
     }
+    if (demoVisitorsResult.status === "fulfilled") {
+      setDemoVisitors(demoVisitorsResult.value.visitors);
+    }
     if (evalRunsResult.status === "fulfilled") {
       setEvalRuns(evalRunsResult.value.runs);
     }
@@ -522,22 +595,19 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       setInterviewQaCards(interviewQaResult.value.cards);
     }
 
-    const failures = [
-      failureMessage("conversations", conversationsResult),
-      failureMessage("feedback", feedbackResult),
-      failureMessage("leave requests", leaveRequestsResult),
-      failureMessage("architecture docs", docsResult),
-      failureMessage("golden dataset", goldenDatasetResult),
-      failureMessage("live queries", liveQueriesResult),
-      failureMessage("synthetic dataset", syntheticDatasetResult),
-      failureMessage("eval runs", evalRunsResult),
-      failureMessage("live metrics", metricsResult),
-      failureMessage("interview Q&A", interviewQaResult),
-    ].filter((message): message is string => message !== null);
-
-    if (failures.length > 0) {
-      setError(`Couldn't load: ${failures.join("; ")}`);
-    }
+    const errors: Partial<Record<AdminTab, string>> = {};
+    recordTabError(errors, "conversations", "conversations", conversationsResult);
+    recordTabError(errors, "feedback", "feedback", feedbackResult);
+    recordTabError(errors, "leave-requests", "leave requests", leaveRequestsResult);
+    recordTabError(errors, "docs", "architecture docs", docsResult);
+    recordTabError(errors, "golden-dataset", "golden dataset", goldenDatasetResult);
+    recordTabError(errors, "live-queries", "live queries", liveQueriesResult);
+    recordTabError(errors, "synthetic-dataset", "synthetic dataset", syntheticDatasetResult);
+    recordTabError(errors, "demo-visitors", "demo visitors", demoVisitorsResult);
+    recordTabError(errors, "eval-runs", "eval runs", evalRunsResult);
+    recordTabError(errors, "live-metrics", "live metrics", metricsResult);
+    recordTabError(errors, "interview-qa", "interview Q&A", interviewQaResult);
+    setErrorsByTab(errors);
 
     setIsLoading(false);
   }
@@ -595,6 +665,15 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     setSelectedApplication(value);
     setSelectedSnapshotId("live");
     setCiStatusPage(1);
+    // 2026-10-29 - user-reported: switching this dropdown could leave the
+    // PREVIOUS application's pipeline view on screen while the new one's
+    // fetch was still in flight, with nothing distinguishing "still the
+    // old app's real data" from "the new app's data" - looked like the
+    // view silently broke. Clearing both here means a switch always shows
+    // an explicit "Loading pipeline..." first, never stale data standing
+    // in for the newly-selected application.
+    setPipelineStatus(null);
+    setPipelineError(null);
   }
 
   async function handleSelectSnapshot(value: string) {
@@ -615,12 +694,15 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
   async function handleOpenDoc(docId: number) {
     setOpeningDocId(docId);
-    setError(null);
+    setErrorsByTab((current) => ({ ...current, docs: undefined }));
     try {
       const { download_url } = await getAdminDocContent(currentIdentity, docId);
       window.open(download_url, "_blank", "noopener,noreferrer");
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : "Could not open the doc.");
+      setErrorsByTab((current) => ({
+        ...current,
+        docs: err instanceof ApiRequestError ? err.message : "Could not open the doc.",
+      }));
     } finally {
       setOpeningDocId(null);
     }
@@ -646,6 +728,29 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       await refresh();
     } catch (err) {
       setInterviewQaDeleteError(err instanceof ApiRequestError ? err.message : "Could not delete this card.");
+    }
+  }
+
+  // Phase 2 (hrb_chatbot_service Phase 265) - adds 15 extra queries to one
+  // visitor's effective demo limit (e.g. during a live interview demo).
+  // Per-row "Granting..." state via a Set of in-flight conversation_ids,
+  // same shape bulkDelete's own ids Set already uses.
+  async function handleGrantDemoWaiver(conversationId: string) {
+    setGrantWaiverError(null);
+    setGrantingWaiverIds((current) => new Set(current).add(conversationId));
+    try {
+      await grantDemoWaiver(currentIdentity, conversationId);
+      await refresh();
+    } catch (err) {
+      setGrantWaiverError(
+        err instanceof ApiRequestError ? err.message : "Could not grant a waiver for this visitor.",
+      );
+    } finally {
+      setGrantingWaiverIds((current) => {
+        const next = new Set(current);
+        next.delete(conversationId);
+        return next;
+      });
     }
   }
 
@@ -679,6 +784,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     "golden-dataset": goldenDatasetCases.length,
     "live-queries": liveQueries.length,
     "synthetic-dataset": syntheticDatasetCases.length,
+    "demo-visitors": demoVisitors.length,
     "eval-runs": evalRuns.length,
     "interview-qa": interviewQaCards.length,
   };
@@ -694,7 +800,17 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
   function handleSelectCategory(category: AdminCategory) {
     setActiveCategory(category);
-    setActiveTab(CATEGORY_TABS[category][0]);
+    const firstTab = CATEGORY_TABS[category][0];
+    setActiveTab(firstTab);
+    if (category === "build-deploy") {
+      setBuildDeployCluster(clusterForBuildDeployTab(firstTab));
+    }
+    setSearchQuery("");
+  }
+
+  function handleSelectBuildDeployCluster(cluster: BuildDeployCluster) {
+    setBuildDeployCluster(cluster);
+    setActiveTab(BUILD_DEPLOY_CLUSTERS[cluster][0]);
     setSearchQuery("");
   }
 
@@ -720,6 +836,9 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   const filteredSyntheticDatasetCases = syntheticDatasetCases.filter((c) =>
     matches([c.case_key, c.dataset, c.category, c.query]),
   );
+  const filteredDemoVisitors = demoVisitors.filter((v) =>
+    matches([v.conversation_id, v.employee_id, v.full_name, v.role, v.ip_address, v.timezone]),
+  );
   const filteredEvalRuns = evalRuns.filter((r) => matches([r.decision, r.run_at]));
   const interviewQaTopics = Array.from(new Set(interviewQaCards.map((c) => c.topic))).sort();
   const filteredInterviewQaCards = interviewQaCards
@@ -734,6 +853,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     "golden-dataset": "Search by case key, dataset, category, or query...",
     "live-queries": "Search by query text, pipeline, request id, or employee...",
     "synthetic-dataset": "Search by case key, dataset, category, or query...",
+    "demo-visitors": "Search by conversation id, employee, role, IP, or timezone...",
     "eval-runs": "Search by decision or date...",
     "interview-qa": "Search by topic or question...",
   };
@@ -742,7 +862,6 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     activeTab !== "upload" &&
     activeTab !== "ci-status" &&
     activeTab !== "live-metrics" &&
-    activeTab !== "settings" &&
     activeTab !== "aws-demo";
 
   function renderWorkflowStatus(status: WorkflowStatus) {
@@ -827,12 +946,12 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
         )}
 
         {!standaloneCategory && (
-          <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 18 }}>
+          <div className="tab-strip" style={{ marginBottom: 18 }}>
             {visibleCategories.map((category) => (
               <button
                 key={category}
                 type="button"
-                className={activeCategory === category ? undefined : "secondary"}
+                className={activeCategory === category ? "tab-strip-button-active" : "tab-strip-button"}
                 onClick={() => handleSelectCategory(category)}
               >
                 {CATEGORY_LABELS[category]}
@@ -841,12 +960,27 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           </div>
         )}
 
-        <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 20 }}>
-          {visibleTabs.map((tab) => (
+        {activeCategory === "build-deploy" && (
+          <div className="tab-strip tab-strip-nested">
+            {BUILD_DEPLOY_CLUSTER_ORDER.map((cluster) => (
+              <button
+                key={cluster}
+                type="button"
+                className={buildDeployCluster === cluster ? "tab-strip-button-active" : "tab-strip-button"}
+                onClick={() => handleSelectBuildDeployCluster(cluster)}
+              >
+                {BUILD_DEPLOY_CLUSTER_LABELS[cluster]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className={activeCategory === "build-deploy" ? "tab-strip tab-strip-nested" : "tab-strip"} style={{ marginBottom: 20 }}>
+          {(activeCategory === "build-deploy" ? BUILD_DEPLOY_CLUSTERS[buildDeployCluster] : visibleTabs).map((tab) => (
             <button
               key={tab}
               type="button"
-              className={activeTab === tab ? undefined : "secondary"}
+              className={activeTab === tab ? "tab-strip-button-active" : "tab-strip-button"}
               onClick={() => {
                 setActiveTab(tab);
                 setSearchQuery("");
@@ -876,7 +1010,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           />
         )}
 
-        {error && <p className="error-banner">{error}</p>}
+        {errorsByTab[activeTab] && <p className="error-banner">Couldn't load: {errorsByTab[activeTab]}</p>}
 
         {activeTab === "documents" && <DocumentsPage />}
         {activeTab === "upload" && <UploadPage />}
@@ -1163,7 +1297,10 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                       <td>{goldenCase.case_key}</td>
                       <td>{goldenCase.dataset}</td>
                       <td>{goldenCase.category ?? "-"}</td>
-                      <td>{goldenCase.query ?? "-"}</td>
+                      <td>
+                        {goldenCase.query ?? "-"}
+                        {goldenCase.query && <CopyButton text={goldenCase.query} label="query" />}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1183,7 +1320,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
             <p className="dev-note-inline">
               Real production questions, scored by the same live groundedness judge every answer already gets.
               Queries scoring above the LTM threshold (Settings &rarr; Memory) are promoted to{" "}
-              <code>is_ltm = true</code>. Read-only.
+              <code>is_ltm = true</code>.
             </p>
             <label style={{ display: "block", marginBottom: 12 }}>
               Filter:{" "}
@@ -1196,10 +1333,36 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                 <option value="not-ltm">Not LTM</option>
               </select>
             </label>
+            {checkedLiveQueryIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  bulkDelete(checkedLiveQueryIds, setCheckedLiveQueryIds, (id) => deleteLiveQuery(currentIdentity, id))
+                }
+                disabled={isBulkDeleting}
+              >
+                {isBulkDeleting ? "Deleting..." : `Delete ${checkedLiveQueryIds.size} selected`}
+              </button>
+            )}
+            {bulkDeleteError && <p className="error-banner">{bulkDeleteError}</p>}
             <div className="documents-table-scroll admin-dashboard-table-scroll">
               <table className="documents-table">
                 <thead>
                   <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        checked={filteredLiveQueries.length > 0 && checkedLiveQueryIds.size === filteredLiveQueries.length}
+                        onChange={() =>
+                          toggleAll(
+                            filteredLiveQueries.map((q) => q.id),
+                            checkedLiveQueryIds,
+                            setCheckedLiveQueryIds,
+                          )
+                        }
+                        aria-label="Select all live queries"
+                      />
+                    </th>
                     <th>Query</th>
                     <th>Pipeline</th>
                     <th>Eval score</th>
@@ -1210,6 +1373,14 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                 <tbody>
                   {filteredLiveQueries.map((liveQuery) => (
                     <tr key={liveQuery.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={checkedLiveQueryIds.has(liveQuery.id)}
+                          onChange={() => toggleOne(checkedLiveQueryIds, setCheckedLiveQueryIds, liveQuery.id)}
+                          aria-label={`Select live query #${liveQuery.id}`}
+                        />
+                      </td>
                       <td>{liveQuery.query_text}</td>
                       <td>{liveQuery.pipeline ?? "-"}</td>
                       <td>{liveQuery.eval_score ?? "-"}</td>
@@ -1253,7 +1424,10 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                       <td>{syntheticCase.case_key}</td>
                       <td>{syntheticCase.dataset}</td>
                       <td>{syntheticCase.category ?? "-"}</td>
-                      <td>{syntheticCase.query ?? "-"}</td>
+                      <td>
+                        {syntheticCase.query ?? "-"}
+                        {syntheticCase.query && <CopyButton text={syntheticCase.query} label="query" />}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1266,7 +1440,96 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           </>
         )}
 
-        {!isLoading && activeTab === "settings" && <SettingsPanel userProfile={currentIdentity} />}
+        {!isLoading && activeTab === "demo-visitors" && (
+          <>
+            <p className="dev-note-inline">
+              Every tracked live-demo visitor (self-asserted identity, IP, browser timezone, query/waiver counts).
+              Grant +15 waives this visitor's cap by 15 more questions, e.g. during a live interview demo - repeatable,
+              each click adds on top of any prior waiver.
+            </p>
+            {grantWaiverError && <p className="error-banner">{grantWaiverError}</p>}
+            {checkedDemoVisitorIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  bulkDelete(checkedDemoVisitorIds, setCheckedDemoVisitorIds, (id) =>
+                    deleteDemoVisitor(currentIdentity, id),
+                  )
+                }
+                disabled={isBulkDeleting}
+              >
+                {isBulkDeleting ? "Deleting..." : `Delete ${checkedDemoVisitorIds.size} selected`}
+              </button>
+            )}
+            {bulkDeleteError && <p className="error-banner">{bulkDeleteError}</p>}
+            <div className="documents-table-scroll admin-dashboard-table-scroll">
+              <table className="documents-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        checked={filteredDemoVisitors.length > 0 && checkedDemoVisitorIds.size === filteredDemoVisitors.length}
+                        onChange={() =>
+                          toggleAll(
+                            filteredDemoVisitors.map((v) => v.conversation_id),
+                            checkedDemoVisitorIds,
+                            setCheckedDemoVisitorIds,
+                          )
+                        }
+                        aria-label="Select all demo visitors"
+                      />
+                    </th>
+                    <th>Employee ID</th>
+                    <th>Full name</th>
+                    <th>Role</th>
+                    <th>IP address</th>
+                    <th>Timezone</th>
+                    <th>Queries used</th>
+                    <th>Last active</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDemoVisitors.map((visitor) => (
+                    <tr key={visitor.conversation_id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={checkedDemoVisitorIds.has(visitor.conversation_id)}
+                          onChange={() => toggleOne(checkedDemoVisitorIds, setCheckedDemoVisitorIds, visitor.conversation_id)}
+                          aria-label={`Select demo visitor ${visitor.conversation_id}`}
+                        />
+                      </td>
+                      <td>{visitor.employee_id ?? "-"}</td>
+                      <td>{visitor.full_name ?? "-"}</td>
+                      <td>{visitor.role ?? "-"}</td>
+                      <td>{visitor.ip_address ?? "-"}</td>
+                      <td>{visitor.timezone ?? "-"}</td>
+                      <td>
+                        {visitor.query_count} / {visitor.effective_limit}
+                      </td>
+                      <td>{visitor.last_query_at ? new Date(visitor.last_query_at).toLocaleString() : "-"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => handleGrantDemoWaiver(visitor.conversation_id)}
+                          disabled={grantingWaiverIds.has(visitor.conversation_id)}
+                        >
+                          {grantingWaiverIds.has(visitor.conversation_id) ? "Granting..." : "Grant +15"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {demoVisitors.length === 0 && <p className="dev-note-inline">No demo visitors tracked yet.</p>}
+              {demoVisitors.length > 0 && filteredDemoVisitors.length === 0 && (
+                <p className="dev-note-inline">No matches for your search.</p>
+              )}
+            </div>
+          </>
+        )}
 
         {!isLoading && activeTab === "aws-demo" && <AwsDemoPanel userProfile={currentIdentity} />}
 

@@ -2,18 +2,6 @@ import { useEffect, useState } from "react";
 import { ApiRequestError, getAppSetting, updateAppSetting } from "../api/client";
 import type { UserProfile } from "../types";
 
-interface SettingsPanelProps {
-  userProfile: UserProfile;
-}
-
-type SettingsSubTab = "model" | "memory" | "resiliency";
-
-const SUB_TAB_LABELS: Record<SettingsSubTab, string> = {
-  model: "Model",
-  memory: "Memory",
-  resiliency: "Resiliency",
-};
-
 // Phase 1 - the field's own documented default, shown when GET 404s
 // (key never set in app_settings) - matches each setting's real
 // hardcoded fallback in hrb_chatbot_service's own source, not guessed:
@@ -48,7 +36,13 @@ interface SettingFieldProps {
 // success/failure message - a PUT failure leaves the old value on
 // screen rather than clearing it, matching this project's general
 // "never lose what the user already saw" convention.
-function SettingField({ userProfile, settingKey, label, helpText, kind, options, min, max, step }: SettingFieldProps) {
+//
+// 2026-10-29 - moved out of its own Admin Dashboard "Settings" tab into
+// the main chat UI's own Settings modal (ChatPage.tsx, gear icon,
+// admin-only gated there) - user-directed, this is a reusable field
+// building block, not a full panel, so only SettingField itself is
+// exported now; the old default-exported tabbed wrapper is gone.
+export function SettingField({ userProfile, settingKey, label, helpText, kind, options, min, max, step }: SettingFieldProps) {
   const [value, setValue] = useState<string>(String(DOCUMENTED_DEFAULTS[settingKey] ?? ""));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -138,113 +132,3 @@ function SettingField({ userProfile, settingKey, label, helpText, kind, options,
   );
 }
 
-// Phase 1 - MVP-5's Settings page: runtime-editable knobs backed by
-// hrb_chatbot_service's generic app_settings mechanism (Phase 257/260),
-// no redeploy needed for any of these to take effect. "Dataset" was
-// discussed early on as a possible 4th sub-tab but has no real setting
-// to hold today - not built (flagged, not in scope).
-export default function SettingsPanel({ userProfile }: SettingsPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<SettingsSubTab>("model");
-
-  return (
-    <div>
-      <p className="dev-note-inline">
-        Runtime settings backed by hrb_chatbot_service's generic <code>app_settings</code> store. Changes take effect
-        on the next request - no redeploy needed.
-      </p>
-      <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 20 }}>
-        {(Object.keys(SUB_TAB_LABELS) as SettingsSubTab[]).map((subTab) => (
-          <button
-            key={subTab}
-            type="button"
-            className={activeSubTab === subTab ? undefined : "secondary"}
-            onClick={() => setActiveSubTab(subTab)}
-          >
-            {SUB_TAB_LABELS[subTab]}
-          </button>
-        ))}
-      </div>
-
-      {activeSubTab === "model" && (
-        <SettingField
-          userProfile={userProfile}
-          settingKey="judge_provider_default"
-          label="DeepEval judge provider"
-          helpText="Which LLM provider scores golden/release-gate cases (groundedness, completeness, relevancy, etc)."
-          kind="select"
-          options={[
-            { value: "openai", label: "OpenAI" },
-            { value: "anthropic", label: "Anthropic" },
-          ]}
-        />
-      )}
-
-      {activeSubTab === "memory" && (
-        <SettingField
-          userProfile={userProfile}
-          settingKey="ltm_score_threshold"
-          label="LTM score threshold"
-          helpText={
-            "Live queries scoring at or above this groundedness threshold (0.0-1.0) get promoted to " +
-            "is_ltm = true - a curated pool of real-world questions the system already answers well. " +
-            "This is distinct from the existing conversation_store, which saves every turn regardless of score."
-          }
-          kind="number"
-          min={0}
-          max={1}
-          step={0.05}
-        />
-      )}
-
-      {activeSubTab === "resiliency" && (
-        <>
-          <SettingField
-            userProfile={userProfile}
-            settingKey="react_loop_max_iterations"
-            label="ReAct loop max iterations"
-            helpText="single-agentic-rag's own tool-calling loop cap, per request."
-            kind="number"
-            min={1}
-            step={1}
-          />
-          <SettingField
-            userProfile={userProfile}
-            settingKey="llm_openai_circuit_breaker_failure_threshold"
-            label="OpenAI circuit breaker - failure threshold"
-            helpText="Consecutive OpenAI call failures, within the cooldown window below, before the breaker trips."
-            kind="number"
-            min={1}
-            step={1}
-          />
-          <SettingField
-            userProfile={userProfile}
-            settingKey="llm_openai_circuit_breaker_cooldown_seconds"
-            label="OpenAI circuit breaker - cooldown seconds"
-            helpText="How long the breaker stays open (failing fast) once tripped, before allowing one retry."
-            kind="number"
-            min={1}
-            step={1}
-          />
-          <SettingField
-            userProfile={userProfile}
-            settingKey="llm_anthropic_circuit_breaker_failure_threshold"
-            label="Anthropic circuit breaker - failure threshold"
-            helpText="Consecutive Anthropic call failures, within the cooldown window below, before the breaker trips."
-            kind="number"
-            min={1}
-            step={1}
-          />
-          <SettingField
-            userProfile={userProfile}
-            settingKey="llm_anthropic_circuit_breaker_cooldown_seconds"
-            label="Anthropic circuit breaker - cooldown seconds"
-            helpText="How long the breaker stays open (failing fast) once tripped, before allowing one retry."
-            kind="number"
-            min={1}
-            step={1}
-          />
-        </>
-      )}
-    </div>
-  );
-}

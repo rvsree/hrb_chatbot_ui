@@ -50,6 +50,18 @@
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 22px;
+
+  /* Phase 3 - documented type scale (not theme-dependent, same in light/
+     dark). --font-size-caption was 12px, bumped to 13px per direct
+     feedback that it still read too small for prose-style help text -
+     now equal to --font-size-body, differentiated by color/role, not size. */
+  --font-size-eyebrow: 11px;
+  --font-size-caption: 13px;
+  --font-size-body: 13px;
+  --font-size-control: 14px;
+  --font-size-heading-sm: 16px;
+  --font-size-heading-md: 18px;
+  --lh-relaxed: 1.55;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -391,12 +403,17 @@ button.sidebar-section-header:hover {
    that; overflow-y: auto (inherited from .modal-card) still protects a
    future tab that outgrows even this. Widened/heightened same day -
    Model tab grew from 2 fields to 6 (Phase 243's model tiering +
-   DeepEval split + embedding split), outgrowing the original 560x640. */
+   DeepEval split + embedding split), outgrowing the original 560x640.
+   2026-10-29 - widened/heightened again: 2 new admin-only tabs
+   (Memory/Resiliency, moved in from the Admin Dashboard's own removed
+   Settings category) - Resiliency alone holds 5 fields, the tallest tab
+   this card has held yet; overflow-y: auto still covers it if it ever
+   grows past even this. */
 .settings-modal-card {
-  width: 680px;
-  height: min(760px, 90vh);
-  max-width: 680px;
-  max-height: min(760px, 90vh);
+  width: 760px;
+  height: min(860px, 92vh);
+  max-width: 760px;
+  max-height: min(860px, 92vh);
 }
 
 .sidebar-section-body {
@@ -1175,6 +1192,14 @@ button.conversation-item:hover {
   flex-shrink: 0;
 }
 
+/* Phase 3 - drift fix: the scale documented just above this block says
+   18px for the modal title, but .modal-card h2's own 16px was winning
+   with no override here. Scoped to this card only - .modal-card h2
+   stays 16px for every other modal. */
+.explainability-card h2 {
+  font-size: var(--font-size-heading-md);
+}
+
 .explainability-row {
   display: flex;
   gap: 12px;
@@ -1674,7 +1699,8 @@ button.help-popover-copy:hover {
 }
 
 .explainability-card .eval-score-value {
-  font-size: 14px;
+  /* Phase 3 - drift fix: documented scale says 15px, this was 14px. */
+  font-size: 15px;
   font-weight: 600;
   margin: 2px 0;
 }
@@ -1748,12 +1774,17 @@ button.help-popover-copy:hover {
 }
 
 .explainability-data-table thead th {
-  font-size: 11px;
+  font-size: var(--font-size-eyebrow);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-strong);
+  /* Phase 3 - same 11px, but with real breathing room: several correctly-
+     sized small labels with no vertical spacing is what read as "too
+     small" in review, not the 11px value itself. */
+  padding-top: 10px;
+  padding-bottom: 12px;
 }
 
 /* A row-label th (no thead - a 2-column label:value table, e.g. the
@@ -1849,6 +1880,64 @@ button.tag:hover {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 20px;
+}
+
+/* Phase 3 - a real tab component, new and dedicated (not .modal-actions/
+   .secondary, which every real modal OK/Cancel footer still depends on
+   unchanged). Before this, every tab row in the app (Admin Dashboard
+   categories, every category's own sub-tab row, Settings, Explainability's
+   full tree, the Gate 1-6 row) reused that button-footer pair, which is
+   exactly why every "tab" read as a plain button. */
+.tab-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.tab-strip-button {
+  position: relative;
+  top: 1px;
+  font-size: var(--font-size-control);
+  padding: 9px 18px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.tab-strip-button-active {
+  position: relative;
+  top: 1px;
+  font-size: var(--font-size-control);
+  font-weight: 600;
+  padding: 9px 18px;
+  border: 1px solid var(--accent);
+  border-bottom: 1px solid var(--surface);
+  border-radius: 8px 8px 0 0;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* A nested tab-strip (mid/leaf level inside an already-selected top-level
+   tab, e.g. Build & Deployment's clusters, Explainability's Retrieval vs
+   Response Generation) sits directly under its parent row with no gap. */
+.tab-strip-nested {
+  padding: 10px 12px 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  margin-top: -1px;
+}
+
+.tab-strip-content-panel {
+  border: 1px solid var(--border-strong);
+  border-top: none;
+  background: var(--surface);
+  border-radius: 0 0 10px 10px;
+  padding: 20px 24px;
 }
 
 /* Phase 162 - "Request Unpaid Leave" modal's own form field spacing/errors.
@@ -2674,8 +2763,11 @@ button.doc-link-popover-item:hover {
 .dev-note-inline {
   color: var(--text-muted);
   /* 2026-10-18 - 11px -> 12px; this class also carries real explanatory
-     sentences, not just tiny metadata labels, and 11px read too small. */
-  font-size: 12px;
+     sentences, not just tiny metadata labels, and 11px read too small.
+     Phase 3 - 12px -> 13px (= --font-size-caption), same reasoning, one
+     more notch - still read too small per direct feedback. */
+  font-size: var(--font-size-caption);
+  line-height: var(--lh-relaxed);
 }
 
 .upload-settings-row {

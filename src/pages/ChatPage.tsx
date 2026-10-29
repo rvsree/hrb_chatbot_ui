@@ -22,6 +22,7 @@ import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
 import HelpPopover from "../components/HelpPopover";
 import MessageBubble from "../components/MessageBubble";
+import { SettingField } from "../components/SettingsPanel";
 import UnpaidLeaveModal from "../components/UnpaidLeaveModal";
 import { useIdentity } from "../context/IdentityContext";
 import { loadConversations, saveConversations } from "../storage/conversationsStorage";
@@ -234,7 +235,17 @@ export default function ChatPage() {
   // real backend default to mirror: Phase 215 deliberately shipped it
   // opt-in only (no threshold enforced unless the caller sets one), so it
   // stays unset/off here too rather than inventing one.
-  const [settingsTab, setSettingsTab] = useState<"rag-search" | "rag-config" | "model">("rag-search");
+  // 2026-10-29 - Memory/Resiliency added (user-directed): moved here from
+  // the Admin Dashboard's own now-removed "Settings" top-level category
+  // (Phase 4/5 there) - these are app-wide runtime knobs, same family as
+  // this bar's existing Model tab, not Build & Deployment content. Both
+  // new tabs are admin-only (see the tab-row buttons and their panels
+  // below) - the knobs they hold (DeepEval judge provider was folded into
+  // the existing Model tab instead of a 4th tab, since it's genuinely a
+  // model-selection setting) aren't meant for every role to see or edit.
+  const [settingsTab, setSettingsTab] = useState<
+    "rag-search" | "rag-config" | "model" | "memory" | "resiliency"
+  >("rag-search");
   const [topK, setTopK] = useState<number | undefined>(DEFAULT_TOP_K);
   const [evalScoreThreshold, setEvalScoreThreshold] = useState<number | undefined>(undefined);
   // Phase 226 - off by default, same reasoning as evalScoreThreshold above
@@ -631,6 +642,7 @@ export default function ChatPage() {
           toolsUsed: response.tools_used,
           evalScoreThreshold,
           enableCorrectiveRetry,
+          demoLimit: response.demo_limit,
         };
         returnedConversationId = response.conversation_id;
       } else if (mode === "single-agentic-rag") {
@@ -646,6 +658,7 @@ export default function ChatPage() {
           feedback: null,
           explainability: response.explainability_info,
           evalScoreThreshold,
+          demoLimit: response.demo_limit,
         };
         returnedConversationId = response.conversation_id;
       } else if (mode === "multi-agentic-rag") {
@@ -662,6 +675,7 @@ export default function ChatPage() {
           feedback: null,
           explainability: response.explainability_info,
           evalScoreThreshold,
+          demoLimit: response.demo_limit,
         };
         returnedConversationId = response.conversation_id;
       } else {
@@ -683,6 +697,7 @@ export default function ChatPage() {
           feedback: null,
           explainability: response.explainability_info,
           evalScoreThreshold,
+          demoLimit: response.demo_limit,
         };
         returnedConversationId = response.conversation_id;
       }
@@ -842,6 +857,28 @@ export default function ChatPage() {
             >
               Model
             </button>
+            {/* 2026-10-29 - admin-only (user-directed): these moved from the
+                Admin Dashboard's own DevOps-only "Settings" category, so
+                they keep the same access restriction here, not widened to
+                every role just because the tab moved. */}
+            {currentIdentity.role === "admin" && (
+              <>
+                <button
+                  type="button"
+                  className={settingsTab === "memory" ? "settings-tab-active" : "settings-tab"}
+                  onClick={() => setSettingsTab("memory")}
+                >
+                  Memory
+                </button>
+                <button
+                  type="button"
+                  className={settingsTab === "resiliency" ? "settings-tab-active" : "settings-tab"}
+                  onClick={() => setSettingsTab("resiliency")}
+                >
+                  Resiliency
+                </button>
+              </>
+            )}
           </div>
 
           {settingsTab === "rag-search" && (
@@ -1164,6 +1201,97 @@ export default function ChatPage() {
                   ))}
                 </select>
               </label>
+              {/* 2026-10-29 - moved here from the Admin Dashboard's removed
+                  "Settings" category (its own former Model sub-tab) -
+                  genuinely a model-selection setting, same as every other
+                  field on this tab, so folded in rather than given its own
+                  tab. Admin-only, matching that tab's prior access. */}
+              {currentIdentity.role === "admin" && (
+                <SettingField
+                  userProfile={currentIdentity}
+                  settingKey="judge_provider_default"
+                  label="DeepEval judge provider"
+                  helpText="Which LLM provider scores golden/release-gate cases (groundedness, completeness, relevancy, etc)."
+                  kind="select"
+                  options={[
+                    { value: "openai", label: "OpenAI" },
+                    { value: "anthropic", label: "Anthropic" },
+                  ]}
+                />
+              )}
+            </div>
+          )}
+
+          {/* 2026-10-29 - moved from the Admin Dashboard's removed
+              "Settings" category (its own former Memory/Resiliency
+              sub-tabs) - see the tab-row buttons above for the admin-only
+              gating these 2 tabs carry over unchanged. */}
+          {settingsTab === "memory" && currentIdentity.role === "admin" && (
+            <div className="settings-tab-panel">
+              <SettingField
+                userProfile={currentIdentity}
+                settingKey="ltm_score_threshold"
+                label="LTM score threshold"
+                helpText={
+                  "Live queries scoring at or above this groundedness threshold (0.0-1.0) get promoted to " +
+                  "is_ltm = true - a curated pool of real-world questions the system already answers well. " +
+                  "This is distinct from the existing conversation_store, which saves every turn regardless of score."
+                }
+                kind="number"
+                min={0}
+                max={1}
+                step={0.05}
+              />
+            </div>
+          )}
+
+          {settingsTab === "resiliency" && currentIdentity.role === "admin" && (
+            <div className="settings-tab-panel">
+              <SettingField
+                userProfile={currentIdentity}
+                settingKey="react_loop_max_iterations"
+                label="ReAct loop max iterations"
+                helpText="single-agentic-rag's own tool-calling loop cap, per request."
+                kind="number"
+                min={1}
+                step={1}
+              />
+              <SettingField
+                userProfile={currentIdentity}
+                settingKey="llm_openai_circuit_breaker_failure_threshold"
+                label="OpenAI circuit breaker - failure threshold"
+                helpText="Consecutive OpenAI call failures, within the cooldown window below, before the breaker trips."
+                kind="number"
+                min={1}
+                step={1}
+              />
+              <SettingField
+                userProfile={currentIdentity}
+                settingKey="llm_openai_circuit_breaker_cooldown_seconds"
+                label="OpenAI circuit breaker - cooldown seconds"
+                helpText="How long the breaker stays open (failing fast) once tripped, before allowing one retry."
+                kind="number"
+                min={1}
+                step={1}
+              />
+              <SettingField
+                userProfile={currentIdentity}
+                settingKey="llm_anthropic_circuit_breaker_failure_threshold"
+                label="Anthropic circuit breaker - failure threshold"
+                helpText="Consecutive Anthropic call failures, within the cooldown window below, before the breaker trips."
+                kind="number"
+                min={1}
+                step={1}
+              />
+              <SettingField
+                userProfile={currentIdentity}
+                settingKey="llm_anthropic_circuit_breaker_cooldown_seconds"
+                label="Anthropic circuit breaker - cooldown seconds"
+                helpText="How long the breaker stays open (failing fast) once tripped, before allowing one retry."
+                kind="number"
+                min={1}
+                step={1}
+              />
             </div>
           )}
         </div>
@@ -1370,6 +1498,27 @@ export default function ChatPage() {
             <p className="error-banner">{sendError}</p>
           </div>
         )}
+
+        {/* Phase 2 (hrb_chatbot_service Phase 265) - proactive remaining-
+            queries indicator, from the most recent assistant message's own
+            demo_limit. Null for admin/hr_support (exempt) or when the
+            limiter is disabled server-side - renders nothing then. */}
+        {!sendError &&
+          (() => {
+            const messages = activeConversation?.messages ?? [];
+            const lastAssistantMessage = messages.filter((message) => message.role === "assistant").at(-1);
+            const demoLimit = lastAssistantMessage?.demoLimit;
+            if (!demoLimit) {
+              return null;
+            }
+            return (
+              <div className="chat-column">
+                <p className="dev-note-inline">
+                  {demoLimit.remaining} of {demoLimit.effective_limit} demo questions remaining in this session.
+                </p>
+              </div>
+            );
+          })()}
 
         {(adhocFiles.length > 0 || adhocRejections.length > 0) && (
           <div className="chat-column">

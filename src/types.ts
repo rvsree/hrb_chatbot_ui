@@ -4,6 +4,18 @@ export interface UserProfile {
   employee_id: string;
   full_name: string;
   role: Role;
+  // Phase 2 (hrb_chatbot_service Phase 265) - browser-reported
+  // (Intl.DateTimeFormat), captured once at login. No reliable
+  // server-side way to infer this, so the frontend is the only source.
+  timezone?: string;
+}
+
+// Phase 2 - null when the demo-limit check is disabled/not applicable
+// (e.g. admin/hr_support are exempt).
+export interface DemoLimitInfo {
+  query_count: number;
+  effective_limit: number;
+  remaining: number;
 }
 
 export interface RetrievedChunk {
@@ -143,6 +155,7 @@ export interface RagQueryResponse {
   explainability_info: ExplainabilityInfo;
   tools_used: ToolCallInfo[];
   conversation_id: string | null;
+  demo_limit: DemoLimitInfo | null;
 }
 
 // Phase 161 - real evidence of one SendEmailWithAnswer attempt, sent or
@@ -363,6 +376,9 @@ export interface ChatMessage {
   toolsUsed?: ToolCallInfo[];
   iterations?: number;
   tasks?: AgentTaskInfo[];
+  // Phase 2 - this turn's demo_limit, null when not applicable (admin/
+  // hr_support exempt, or the limiter is disabled server-side).
+  demoLimit?: DemoLimitInfo | null;
   // Phase 240 - set only for an "Auto" mode turn, naming which of
   // single-/multi-agentic-rag was actually picked (or escalated to).
   resolvedMode?: "single-agentic-rag" | "multi-agentic-rag";
@@ -594,6 +610,7 @@ export interface AgenticRagResponse {
   iterations: number;
   explainability_info: ExplainabilityInfo;
   conversation_id: string | null;
+  demo_limit: DemoLimitInfo | null;
   // Phase 240 - set only when returned from POST /v1/rag-retrieval/query
   // (the auto-router). Null/absent on this model's own direct, forced-mode endpoint.
   resolved_mode?: "single-agentic-rag" | "multi-agentic-rag" | null;
@@ -608,6 +625,7 @@ export interface MultiAgenticRagResponse {
   iterations: number;
   explainability_info: ExplainabilityInfo;
   conversation_id: string | null;
+  demo_limit: DemoLimitInfo | null;
   // Phase 240 - set only when returned from POST /v1/rag-retrieval/query
   // (the auto-router, including an escalation from single-agentic-rag).
   resolved_mode?: "single-agentic-rag" | "multi-agentic-rag" | null;
@@ -702,6 +720,45 @@ export interface LiveQuerySummary {
 export interface LiveQueryListResponse {
   count: number;
   queries: LiveQuerySummary[];
+}
+
+// Phase 7 (hrb_chatbot_service's own Phase 267) - hard-delete one captured live query.
+export interface AdminDeleteLiveQueryResponse {
+  id: number;
+  deleted: boolean;
+}
+
+// Phase 2 (hrb_chatbot_service Phase 265) - one tracked live-demo visitor.
+export interface DemoVisitorSummary {
+  conversation_id: string;
+  employee_id: string | null;
+  full_name: string | null;
+  role: string | null;
+  ip_address: string | null;
+  timezone: string | null;
+  query_count: number;
+  waiver_count: number;
+  effective_limit: number;
+  last_query_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DemoVisitorListResponse {
+  count: number;
+  visitors: DemoVisitorSummary[];
+}
+
+// Phase 8 (hrb_chatbot_service's own Phase 268) - hard-delete one tracked demo visitor.
+export interface AdminDeleteDemoVisitorResponse {
+  conversation_id: string;
+  deleted: boolean;
+}
+
+export interface GrantWaiverResponse {
+  conversation_id: string;
+  waiver_count: number;
+  effective_limit: number;
 }
 
 // Phase 1 - a synthetic (generated) test case, same shape as

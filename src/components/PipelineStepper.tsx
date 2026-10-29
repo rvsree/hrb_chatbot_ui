@@ -93,7 +93,10 @@ const JOB_HELP: Record<string, string> = {
     "Before this was split into two separate checks, one job did both back to back: looking for known weaknesses in borrowed building blocks (like checking if a pantry ingredient was recalled), and reading through this project's own code for risky patterns (like a security-focused spell-checker). A commit built after the split shows these as two separate boxes instead - Security Scan and Static Analysis.",
 };
 
-type NodeResult = { status: string; conclusion: string | null } | null;
+// Phase 4 - `tooltip` is built once, right where the real job/step object
+// is still in scope, reusing the existing stepDuration()/jobDuration()
+// helpers rather than re-deriving timing later in the render layer.
+type NodeResult = { status: string; conclusion: string | null; tooltip: string } | null;
 
 // 2026-10-19 - the golden dataset gate's own metric tiles below, split
 // into the same 2 logical groups ExplainabilityModal's per-message Eval
@@ -216,6 +219,24 @@ const PHASE_BAR_LABELS = [
   "Status Notification",
 ] as const;
 
+// Phase 4 - user-reported: the At-a-glance dots' hover tooltip only
+// restated the outcome the dot's own color already shows (e.g. "Build:
+// success (2m)") - no actual explanation of what that stage DOES. These
+// are short, tooltip-length versions of the fuller explanations JOB_HELP
+// above already gives (reused for the 4 ci.yml stages it already covers;
+// written fresh for deploy.yml's 4 stages, which JOB_HELP never covered -
+// those are steps within one job, not separate named jobs).
+const PHASE_BAR_STAGE_DESCRIPTIONS: Record<(typeof PHASE_BAR_LABELS)[number], string> = {
+  Build: "Packages the app into one deployable image, as a rehearsal - not the image actually shipped.",
+  "Security Scan": "Checks third-party dependencies this project uses for known security vulnerabilities.",
+  "Static Analysis": "Scans this project's own code for risky patterns (exposed secrets, injection risks).",
+  "Test Suite": "Re-runs ~690 automated tests (features + safety guardrails) before anything can ship.",
+  "Docker Image": "Builds the real image that will be deployed and pushes it to ECR, AWS's container registry.",
+  Deploy: "Tells AWS App Runner to roll out the new image, then waits for the new version to go live.",
+  "Smoke Test": "Sends a real request to the newly-deployed service to confirm it's actually responding.",
+  "Status Notification": "Reports this deploy's final pass/fail outcome.",
+};
+
 // Phase 188/189 - the CI/CD Pipeline Visibility stage view. One connected
 // group per workflow file that actually ran for this commit (ci.yml/
 // deploy.yml/whatever else - not a hardcoded list, whatever GitHub
@@ -271,6 +292,23 @@ export default function PipelineStepper({
       return `${seconds}s`;
     }
     return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
+
+  // Phase 4 - hover text for an At-a-glance dot. `description` (when
+  // given - omitted for the 2 inner sub-steps combineResults below
+  // merges, which aren't stages a user sees named on their own) is what
+  // this stage actually DOES, not just its outcome - user-reported: a
+  // tooltip that only restates the dot's own color ("Build: success
+  // (2m)") isn't useful. Real status/duration already fetched for this
+  // stage, not raw GitHub Actions log text (a new backend call, out of
+  // scope this round - static/structured text was confirmed as an
+  // acceptable fallback).
+  function formatStageTooltip(
+    label: string, status: string, conclusion: string | null, duration: string, description?: string,
+  ): string {
+    const outcome = conclusion ?? status;
+    const descriptionPart = description ? `${description} ` : "";
+    return `${label}: ${descriptionPart}Status: ${outcome} (${duration})`;
   }
 
   function stepDuration(step: PipelineStepDetail): string {
@@ -365,13 +403,20 @@ export default function PipelineStepper({
     null as string | null,
   );
 
-  function findJobStatus(workflowFile: string, jobName: string): NodeResult {
+  function findJobStatus(workflowFile: string, jobName: string, label: string, description?: string): NodeResult {
     const run = pipeline.runs.find((r) => r.workflow_file === workflowFile);
     const job = run?.jobs.find((j) => j.name === jobName);
-    return job ? { status: job.status, conclusion: job.conclusion } : null;
+    if (!job) return null;
+    return {
+      status: job.status,
+      conclusion: job.conclusion,
+      tooltip: formatStageTooltip(label, job.status, job.conclusion, jobDuration(job) ?? job.status, description),
+    };
   }
 
-  function findStepStatus(workflowFile: string, matchesName: (name: string) => boolean): NodeResult {
+  function findStepStatus(
+    workflowFile: string, matchesName: (name: string) => boolean, label: string, description?: string,
+  ): NodeResult {
     const run = pipeline.runs.find((r) => r.workflow_file === workflowFile);
     for (const job of run?.jobs ?? []) {
       const stepIndex = job.steps.findIndex((s) => matchesName(s.name));
@@ -390,23 +435,40 @@ export default function PipelineStepper({
       // which have no such ordering guarantee between them.
       const laterTerminalStep = job.steps.slice(stepIndex + 1).find((s) => s.status === "completed");
       if (laterTerminalStep && step.status !== "completed") {
-        return { status: "completed", conclusion: step.conclusion ?? "success" };
+        const conclusion = step.conclusion ?? "success";
+        return {
+          status: "completed",
+          conclusion,
+          tooltip: formatStageTooltip(label, "completed", conclusion, stepDuration(step), description),
+        };
       }
-      return { status: step.status, conclusion: step.conclusion };
+      return {
+        status: step.status,
+        conclusion: step.conclusion,
+        tooltip: formatStageTooltip(label, step.status, step.conclusion, stepDuration(step), description),
+      };
     }
     return null;
   }
 
-  function combineResults(results: NodeResult[]): NodeResult {
+  function combineResults(results: NodeResult[], label: string, description?: string): NodeResult {
     const present = results.filter((r): r is NonNullable<NodeResult> => r !== null);
     if (present.length === 0) return null;
+    // Combines 2 real steps worth of tooltip text into one line (e.g.
+    // "Build image" + "Push image to ECR" both feed the "Docker Image" dot) -
+    // the inner 2 calls below pass no description of their own (they
+    // aren't stages a user sees named on their own); this outer label's
+    // description is layered on once, here.
+    const combinedDetail = present.map((r) => r.tooltip.split(": ").slice(1).join(": ")).join(" / ");
+    const descriptionPart = description ? `${description} ` : "";
+    const tooltip = `${label}: ${descriptionPart}${combinedDetail}`;
     if (present.some((r) => ["failure", "cancelled", "timed_out", "action_required"].includes(r.conclusion ?? ""))) {
-      return { status: "completed", conclusion: "failure" };
+      return { status: "completed", conclusion: "failure", tooltip };
     }
     if (present.some((r) => r.status === "in_progress" || r.status === "queued")) {
-      return { status: "in_progress", conclusion: null };
+      return { status: "in_progress", conclusion: null, tooltip };
     }
-    return { status: "completed", conclusion: "success" };
+    return { status: "completed", conclusion: "success", tooltip };
   }
 
   // Resolved against the real data every time this renders - "Docker
@@ -414,20 +476,37 @@ export default function PipelineStepper({
   // job (worst-of-both), since those 2 concepts don't each get their own
   // GitHub job the way ci.yml's 4 checks do.
   const phaseResults: Record<(typeof PHASE_BAR_LABELS)[number], NodeResult> = {
-    Build: findJobStatus("ci.yml", "Docker image builds"),
-    "Security Scan": findJobStatus("ci.yml", "Security Scan"),
-    "Static Analysis": findJobStatus("ci.yml", "Static Analysis"),
-    "Test Suite": findJobStatus("ci.yml", "Test suite"),
-    "Docker Image": combineResults([
-      findStepStatus("deploy.yml", (name) => name === "Build image"),
-      findStepStatus("deploy.yml", (name) => name === "Push image to ECR"),
-    ]),
-    Deploy: combineResults([
-      findStepStatus("deploy.yml", (name) => name === "Trigger App Runner deployment"),
-      findStepStatus("deploy.yml", (name) => name.startsWith("Wait for the new deployment")),
-    ]),
-    "Smoke Test": findStepStatus("deploy.yml", (name) => name.startsWith("Deployment smoke test")),
-    "Status Notification": findStepStatus("deploy.yml", (name) => name === "Notify deployment status"),
+    Build: findJobStatus("ci.yml", "Docker image builds", "Build", PHASE_BAR_STAGE_DESCRIPTIONS.Build),
+    "Security Scan": findJobStatus(
+      "ci.yml", "Security Scan", "Security Scan", PHASE_BAR_STAGE_DESCRIPTIONS["Security Scan"],
+    ),
+    "Static Analysis": findJobStatus(
+      "ci.yml", "Static Analysis", "Static Analysis", PHASE_BAR_STAGE_DESCRIPTIONS["Static Analysis"],
+    ),
+    "Test Suite": findJobStatus("ci.yml", "Test suite", "Test Suite", PHASE_BAR_STAGE_DESCRIPTIONS["Test Suite"]),
+    "Docker Image": combineResults(
+      [
+        findStepStatus("deploy.yml", (name) => name === "Build image", "Build image"),
+        findStepStatus("deploy.yml", (name) => name === "Push image to ECR", "Push image to ECR"),
+      ],
+      "Docker Image",
+      PHASE_BAR_STAGE_DESCRIPTIONS["Docker Image"],
+    ),
+    Deploy: combineResults(
+      [
+        findStepStatus("deploy.yml", (name) => name === "Trigger App Runner deployment", "Trigger deployment"),
+        findStepStatus("deploy.yml", (name) => name.startsWith("Wait for the new deployment"), "Wait for deployment"),
+      ],
+      "Deploy",
+      PHASE_BAR_STAGE_DESCRIPTIONS.Deploy,
+    ),
+    "Smoke Test": findStepStatus(
+      "deploy.yml", (name) => name.startsWith("Deployment smoke test"), "Smoke Test", PHASE_BAR_STAGE_DESCRIPTIONS["Smoke Test"],
+    ),
+    "Status Notification": findStepStatus(
+      "deploy.yml", (name) => name === "Notify deployment status", "Status Notification",
+      PHASE_BAR_STAGE_DESCRIPTIONS["Status Notification"],
+    ),
   };
 
   function phaseNodeClass(result: NodeResult): string {
@@ -448,14 +527,14 @@ export default function PipelineStepper({
           steps onto these 8 backend-specific labels, this summary only
           shows for backend - the detailed per-job/per-step cards below it
           already show every other application's own real data accurately. */}
-      {application === "backend" && (
+      {application === "backend" ? (
         <div className="phase-bar-section">
           <span className="phase-bar-section-label">At-a-glance summary</span>
           <div className="phase-bar">
             {PHASE_BAR_LABELS.map((label, index) => (
               <Fragment key={label}>
                 {index > 0 && <span className="phase-bar-connector" />}
-                <div className="phase-node">
+                <div className="phase-node" title={phaseResults[label]?.tooltip ?? `${label}: no data for this commit yet`}>
                   <span className={`phase-node-dot status-${phaseNodeClass(phaseResults[label])}`} />
                   <span className="phase-node-label">{label}</span>
                 </div>
@@ -470,6 +549,19 @@ export default function PipelineStepper({
             or split) - not a failure.
           </p>
         </div>
+      ) : (
+        // 2026-10-29 - user-reported: switching the Application dropdown away
+        // from backend made this whole section silently vanish with no
+        // explanation, read as "the page broke". It's a deliberate scope
+        // limit (see the comment this replaces, still true below) - this
+        // note makes that visible instead of a silent gap. The branch/
+        // commit summary and real per-job/per-step run history below this
+        // still render for every application, unaffected.
+        <p className="dev-note-inline phase-bar-note">
+          No at-a-glance summary for this application - its 8 stage labels are resolved against hrb_chatbot_service's
+          own ci.yml/deploy.yml job and step names, which don't exist in this application's own workflow. Its real
+          run history, with every job and step it actually has, is shown below.
+        </p>
       )}
 
       <div className={`pipeline-banner status-${overallStatusClass(pipeline.runs)}`}>

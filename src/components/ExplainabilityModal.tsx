@@ -361,49 +361,84 @@ const TECH_STACK_GROUPS: { label: string; items: TechStackItem[] }[] = [
   },
 ];
 
-type ExplainabilityTab =
-  | "metrics"
-  | "retrievalStrategy"
-  | "agentFlow"
-  | "evalScore"
-  | "guardrails"
-  | "optimization"
-  | "engineeringTrace"
+// Phase 3 - 2-level tab tree, replacing the old flat 10-tab row (kept as
+// one flat row until this phase - see the phase history on each rename
+// below for the real design trail, not invented after the fact). Phase 4
+// round 2 - the original 3-level version wrapped "Retrieval"/"Response
+// Generation" in a "Retrieval & Response" parent tab that added a click
+// for no real benefit (the parent had no content of its own) - user-
+// reported, removed: those 2 are now top-level tabs directly.
+type ExplainTopTab = "retrieval" | "responseGeneration" | "cacheOptimization" | "techStack";
+type ExplainRetrievalLeaf = "kbRetrieval" | "citations" | "retrievalScore";
+type ExplainResponseLeaf =
+  | "agentRouting"
   | "llmContext"
-  | "citations"
-  | "techStack";
+  | "evalsScore"
+  | "metrics"
+  | "guardrails"
+  | "engineeringTrace";
 
-const EXPLAINABILITY_TABS: { id: ExplainabilityTab; label: string }[] = [
-  { id: "metrics", label: "Metrics" },
-  // 2026-10-18 - user-requested, its own tab rather than a line in Metrics
-  // since more retrieval/ingestion-config attributes (chunking strategy,
-  // top_k, etc.) are planned to join it.
-  { id: "retrievalStrategy", label: "Retrieval Strategy" },
-  { id: "agentFlow", label: "Agent Flow" },
-  // 2026-10-19 - "Retrieval Eval Score"/"Response Generation Eval Score"
-  // merged into one parent tab with Retrieval Score/Response Generation
-  // Score as child sub-tabs (user-requested) - always one topic (how
-  // good is this answer) that only looked like 2 separate concerns.
-  { id: "evalScore", label: "Eval Score" },
+const EXPLAIN_TOP_ORDER: ExplainTopTab[] = ["retrieval", "responseGeneration", "cacheOptimization", "techStack"];
+// Metrics/Guardrails/Engineering Trace are genuinely cross-cutting (not
+// purely retrieval- or generation-specific) - placed under Response
+// Generation rather than split further, since splitting their actual
+// content (not just moving tabs) was past what was asked.
+const EXPLAIN_TOP_LABELS: Record<ExplainTopTab, string> = {
+  retrieval: "Retrieval",
+  responseGeneration: "Response Generation",
+  // 2026-10-20 - user-requested: its own tab, "Caching" as the first child
+  // sub-tab (room for more optimization techniques - rate limiting,
+  // parallel tool calls - to join as sibling sub-tabs later). Phase 3 -
+  // renamed "Optimization" -> "Cache Optimization" (accurate, not
+  // cosmetic - this tab is 100% cache hit/miss content today).
+  cacheOptimization: "Cache Optimization",
+  techStack: "Tech Stack",
+};
+
+// 2026-10-18 - "Retrieval Strategy" was its own tab rather than a line in
+// Metrics since more retrieval/ingestion-config attributes were planned to
+// join it. Phase 3 - renamed "Retrieval Strategy" -> "KB Retrieval".
+const EXPLAIN_RETRIEVAL_LEAF_ORDER: ExplainRetrievalLeaf[] = ["kbRetrieval", "citations", "retrievalScore"];
+const EXPLAIN_RETRIEVAL_LEAF_LABELS: Record<ExplainRetrievalLeaf, string> = {
+  kbRetrieval: "KB Retrieval",
+  citations: "Citations",
+  // Split out of the old merged "Eval Score" tab (2026-10-19 - "Retrieval
+  // Eval Score"/"Response Generation Eval Score" had been merged into one
+  // parent tab with an internal pill switch; Phase 3 undoes that merge
+  // now that each half has its own place in the new 3-level tree - a
+  // content-faithful split, not new content).
+  retrievalScore: "Retrieval Score",
+};
+
+const EXPLAIN_RESPONSE_LEAF_ORDER: ExplainResponseLeaf[] = [
+  "metrics",
+  "agentRouting",
+  "llmContext",
+  "evalsScore",
+  "guardrails",
+  "engineeringTrace",
+];
+const EXPLAIN_RESPONSE_LEAF_LABELS: Record<ExplainResponseLeaf, string> = {
+  metrics: "Metrics",
+  // Was "Agent Flow", Phase 3 round 1 renamed to "Response Generation" -
+  // then round 3 renamed again to "Agent Routing" once "Response
+  // Generation" became the new mid-level category name instead (a real
+  // naming collision, resolved by renaming the content tab, not the
+  // category).
+  agentRouting: "Agent Routing",
+  llmContext: "LLM Context",
+  // Phase 3 round 3 - renamed from "Response Generation Score" (its
+  // "Retrieval Score" sibling keeps that name; this asymmetric naming
+  // was requested explicitly, not an oversight).
+  evalsScore: "Evals Score",
   // Phase 224 - real per-answer NeMo Guardrails (Input/Output) status, not
   // a static description of what guardrails exist. 2026-10-19 round 2 -
   // expanded from NeMo-only to all 6 of this project's own validation
-  // gates (user-requested, after confirming NeMo-only was the real but
-  // confusing original scope) - tab label kept as "Guardrails"
-  // (user-requested, round 3) even though the content now covers all 6
-  // gates, not just NeMo's.
-  { id: "guardrails", label: "Guardrails" },
-  // 2026-10-20 - user-requested: its own tab, "Caching" as the first child
-  // sub-tab (same parent/child pattern Eval Score and Guardrails already
-  // use) - room for more optimization techniques (rate limiting, parallel
-  // tool calls, etc.) to join as sibling sub-tabs later without another
-  // top-level tab each time.
-  { id: "optimization", label: "Optimization" },
-  { id: "engineeringTrace", label: "Engineering Trace" },
-  { id: "llmContext", label: "LLM Context" },
-  { id: "citations", label: "Citations" },
-  { id: "techStack", label: "Tech Stack" },
-];
+  // gates - tab label kept as "Guardrails" even though the content now
+  // covers all 6 gates, not just NeMo's.
+  guardrails: "Guardrails",
+  engineeringTrace: "Engineering Trace",
+};
 
 // Phase 224 - real NeMo Guardrails rail names (nemoguardrails config under
 // ai/guardrails_config), not display guesses - mapped to a short, plain-
@@ -915,13 +950,19 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
   const sources = message.sources ?? [];
   const [selectedChunkKey, setSelectedChunkKey] = useState<string | null>(null);
   const selectedChunk = sources.find((source) => chunkKey(source) === selectedChunkKey) ?? null;
-  const [activeTab, setActiveTab] = useState<ExplainabilityTab>("metrics");
+  // Phase 3/4 - 2-level tab tree (top -> leaf), replacing the old flat
+  // 10-tab row. Defaults land on the same effective view as before this
+  // phase (Metrics), just one level deeper.
+  const [activeTopTab, setActiveTopTab] = useState<ExplainTopTab>("responseGeneration");
+  const [activeRetrievalLeaf, setActiveRetrievalLeaf] = useState<ExplainRetrievalLeaf>("kbRetrieval");
+  const [activeResponseLeaf, setActiveResponseLeaf] = useState<ExplainResponseLeaf>("metrics");
+  const showingRetrieval = activeTopTab === "retrieval";
+  const showingResponseGeneration = activeTopTab === "responseGeneration";
   // Phase 229 round 2 - user-requested: Input/Output Check split into
   // their own sub-tabs instead of always shown side by side, so each
   // one's now-4-column validations table gets the full tab width
   // instead of half of it.
   const [guardrailsSubTab, setGuardrailsSubTab] = useState<GuardrailGateId>("gate1");
-  const [evalScoreSubTab, setEvalScoreSubTab] = useState<"retrieval" | "response">("retrieval");
   const [optimizationSubTab, setOptimizationSubTab] = useState<"caching">("caching");
 
   // Phase 216 - chunking strategy is a per-document, ingestion-time setting
@@ -935,7 +976,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
   const [chunkingFetchStarted, setChunkingFetchStarted] = useState(false);
 
   useEffect(() => {
-    if (activeTab !== "retrievalStrategy" || chunkingFetchStarted) {
+    if (!showingRetrieval || activeRetrievalLeaf !== "kbRetrieval" || chunkingFetchStarted) {
       return;
     }
     if (!identity || !PRIVILEGED_DOCUMENT_ROLES.has(identity.role)) {
@@ -957,7 +998,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
       }),
     ).then((results) => setChunkingStrategies(Object.fromEntries(results)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, identity, message.id, chunkingFetchStarted]);
+  }, [showingRetrieval, activeRetrievalLeaf, identity, message.id, chunkingFetchStarted]);
 
   if (message.adhoc) {
     return <AdhocExplainability {...props} />;
@@ -968,20 +1009,52 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
       <div className="modal-card explainability-card" onClick={(event) => event.stopPropagation()}>
         <h2>Explainability</h2>
 
-        <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 18 }}>
-          {EXPLAINABILITY_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={activeTab === tab.id ? undefined : "secondary"}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div style={{ marginBottom: 20 }}>
+          <div className="tab-strip">
+            {EXPLAIN_TOP_ORDER.map((top) => (
+              <button
+                key={top}
+                type="button"
+                className={activeTopTab === top ? "tab-strip-button-active" : "tab-strip-button"}
+                onClick={() => setActiveTopTab(top)}
+              >
+                {EXPLAIN_TOP_LABELS[top]}
+              </button>
+            ))}
+          </div>
+
+          {showingRetrieval && (
+            <div className="tab-strip tab-strip-nested">
+              {EXPLAIN_RETRIEVAL_LEAF_ORDER.map((leaf) => (
+                <button
+                  key={leaf}
+                  type="button"
+                  className={activeRetrievalLeaf === leaf ? "tab-strip-button-active" : "tab-strip-button"}
+                  onClick={() => setActiveRetrievalLeaf(leaf)}
+                >
+                  {EXPLAIN_RETRIEVAL_LEAF_LABELS[leaf]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showingResponseGeneration && (
+            <div className="tab-strip tab-strip-nested">
+              {EXPLAIN_RESPONSE_LEAF_ORDER.map((leaf) => (
+                <button
+                  key={leaf}
+                  type="button"
+                  className={activeResponseLeaf === leaf ? "tab-strip-button-active" : "tab-strip-button"}
+                  onClick={() => setActiveResponseLeaf(leaf)}
+                >
+                  {EXPLAIN_RESPONSE_LEAF_LABELS[leaf]}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {activeTab === "metrics" && (
+        {showingResponseGeneration && activeResponseLeaf === "metrics" && (
           <div className="explainability-tab-panel">
           <div className="explainability-row">
             {knowledgeGroups.length > 0 && (
@@ -1060,7 +1133,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           </div>
         )}
 
-        {activeTab === "retrievalStrategy" && (() => {
+        {showingRetrieval && activeRetrievalLeaf === "kbRetrieval" && (() => {
           const mode = detectPipelineMode(message);
           const searchToolCall = toolCallByName(message, "SearchKnowledgeBase");
           // Phase 216 - 3 real answers, not one: genai-rag's own per-request
@@ -1263,7 +1336,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           );
         })()}
 
-        {activeTab === "agentFlow" && (
+        {showingResponseGeneration && activeResponseLeaf === "agentRouting" && (
           <div className="explainability-tab-panel">
           {message.tasks && message.tasks.length > 0 ? (
             <div className="panel panel-info">
@@ -1411,31 +1484,13 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           </div>
         )}
 
-        {activeTab === "evalScore" && (
+        {showingRetrieval && activeRetrievalLeaf === "retrievalScore" && (
           <div className="explainability-tab-panel">
-          {/* 2026-10-19 - user-requested: Retrieval Score/Response
-              Generation Score merged under one parent "Eval Score" tab,
-              same sub-tab pattern as Guardrails' own Input/Output split -
-              these 2 were always conceptually one topic (how good is
-              this answer) split across 2 top-level tab slots. */}
-          <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 12 }}>
-            <button
-              type="button"
-              className={evalScoreSubTab === "retrieval" ? undefined : "secondary"}
-              onClick={() => setEvalScoreSubTab("retrieval")}
-            >
-              Retrieval Score
-            </button>
-            <button
-              type="button"
-              className={evalScoreSubTab === "response" ? undefined : "secondary"}
-              onClick={() => setEvalScoreSubTab("response")}
-            >
-              Response Generation Score
-            </button>
-          </div>
-          {evalScoreSubTab === "retrieval" && (
-            <>
+          {/* Phase 3 - Retrieval Score / Evals Score, previously one merged
+              "Eval Score" tab with an internal pill switch (2026-10-19),
+              now two independent leaf tabs (Retrieval > Retrieval Score,
+              Response Generation > Evals Score) reached via the main
+              3-level tab tree - a content-faithful split, not new content. */}
           <p className="dev-note-inline">
             These scores come from asking another AI to check the retrieval quality against a fixed set of 25
             test questions with known-correct answers. Hover a metric's <strong>?</strong> to see what it measures,
@@ -1567,10 +1622,11 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
               Recall is the number that actually has to pass (minimum 0.6) before a release is allowed.
             </p>
           </div>
-            </>
-          )}
-          {evalScoreSubTab === "response" && (
-            <>
+          </div>
+        )}
+
+        {showingResponseGeneration && activeResponseLeaf === "evalsScore" && (
+          <div className="explainability-tab-panel">
           {message.explainability?.eval_scores ? (
             <div
               className={
@@ -1580,7 +1636,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                   : "panel panel-warning"
               }
             >
-              <span className="panel-eyebrow">Response Generation Eval Score</span>
+              <span className="panel-eyebrow">Evals Score</span>
 
               <div className="eval-score-group">
                 <span className="eval-score-group-label">
@@ -1635,7 +1691,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
             </div>
           ) : (
             <div className="panel panel-warning">
-              <span className="panel-eyebrow">Response Generation Eval Score</span>
+              <span className="panel-eyebrow">Evals Score</span>
               <p>Not available for this message (no retrieved context to check groundedness against).</p>
             </div>
           )}
@@ -1649,12 +1705,10 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
               message={message}
             />
           )}
-            </>
-          )}
           </div>
         )}
 
-        {activeTab === "guardrails" && (() => {
+        {showingResponseGeneration && activeResponseLeaf === "guardrails" && (() => {
           const mode = detectPipelineMode(message);
           const searchStrategy =
             message.retrievalInfo?.search_strategy ??
@@ -1681,20 +1735,17 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                   </p>
                   <p>
                     Gates 2, 3, and 5 are built differently than Gates 1/6 (no NeMo Guardrails rail/activation log to
-                    show) - this tab gives each a real, honest status line, and points to its own tab (Retrieval
-                    Strategy, Eval Score) for the full detail already shown there, rather than repeating it.
+                    show) - this tab gives each a real, honest status line, and points to its own tab (KB Retrieval,
+                    Retrieval Score/Evals Score) for the full detail already shown there, rather than repeating it.
                   </p>
                 </HelpPopover>
               </p>
-              <div
-                className="modal-actions"
-                style={{ flexWrap: "wrap", justifyContent: "flex-start", marginTop: 4, marginBottom: 12 }}
-              >
+              <div className="tab-strip" style={{ marginTop: 4, marginBottom: 12 }}>
                 {GUARDRAIL_GATES.map((gate) => (
                   <button
                     key={gate.id}
                     type="button"
-                    className={guardrailsSubTab === gate.id ? undefined : "secondary"}
+                    className={guardrailsSubTab === gate.id ? "tab-strip-button-active" : "tab-strip-button"}
                     onClick={() => setGuardrailsSubTab(gate.id)}
                   >
                     {gate.label}
@@ -1960,12 +2011,12 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           );
         })()}
 
-        {activeTab === "optimization" && (
+        {activeTopTab === "cacheOptimization" && (
           <div className="explainability-tab-panel">
-            <div className="modal-actions" style={{ justifyContent: "flex-start", marginBottom: 12 }}>
+            <div className="tab-strip" style={{ marginBottom: 12 }}>
               <button
                 type="button"
-                className={optimizationSubTab === "caching" ? undefined : "secondary"}
+                className={optimizationSubTab === "caching" ? "tab-strip-button-active" : "tab-strip-button"}
                 onClick={() => setOptimizationSubTab("caching")}
               >
                 Caching
@@ -2050,7 +2101,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           </div>
         )}
 
-        {activeTab === "engineeringTrace" && (() => {
+        {showingResponseGeneration && activeResponseLeaf === "engineeringTrace" && (() => {
           const mode = detectPipelineMode(message);
           const turns = message.explainability?.llm_context?.turns ?? [];
           const sources = message.sources ?? [];
@@ -2322,7 +2373,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           );
         })()}
 
-        {activeTab === "llmContext" && (
+        {showingResponseGeneration && activeResponseLeaf === "llmContext" && (
           <div className="explainability-tab-panel">
           {llmContext ? (
             <>
@@ -2444,7 +2495,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           </div>
         )}
 
-        {activeTab === "techStack" && (
+        {activeTopTab === "techStack" && (
           <div className="explainability-tab-panel">
           <p className="dev-note-inline">
             Real versions read from requirements.txt (hrb_chatbot_v2) and package.json (hrb_chatbot_ui) as of
@@ -2469,7 +2520,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           </div>
         )}
 
-        {activeTab === "citations" && (
+        {showingRetrieval && activeRetrievalLeaf === "citations" && (
           <div className="explainability-tab-panel">
           <div className="panel panel-success">
             <span className="panel-eyebrow">User Query</span>

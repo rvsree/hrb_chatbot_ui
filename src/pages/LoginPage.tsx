@@ -78,7 +78,12 @@ export default function LoginPage() {
     setLoginError(null);
     try {
       const result = await validateLogin(employeeId.trim(), fullName.trim(), role, secretCode.trim() || undefined);
-      login(result.userProfile);
+      // Phase 2 (hrb_chatbot_service Phase 265) - the backend's own login
+      // response never includes a timezone (it has no way to know it);
+      // the frontend is the only accurate source. Captured once here,
+      // stored with the rest of the identity.
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      login({ ...result.userProfile, timezone });
       navigate(result.mustResetSecretCode ? "/admin/reset-secret-code" : "/chat");
     } catch (error) {
       if (error instanceof ApiRequestError) {

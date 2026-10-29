@@ -5,8 +5,10 @@ import type {
   AdhocSessionListResponse,
   AdminConversationListResponse,
   AdminDeleteConversationResponse,
+  AdminDeleteDemoVisitorResponse,
   AdminDeleteFeedbackResponse,
   AdminDeleteLeaveRequestResponse,
+  AdminDeleteLiveQueryResponse,
   AdminDocContentResponse,
   AdminDocListResponse,
   AgenticRagResponse,
@@ -18,6 +20,7 @@ import type {
   DocumentRecord,
   DocumentUploadResponse,
   DocumentUploadResult,
+  DemoVisitorListResponse,
   FeedbackListResponse,
   FeedbackVote,
   CiStatusResponse,
@@ -27,6 +30,7 @@ import type {
   FaqSubmissionListResponse,
   FaqSubmissionRecord,
   GenaiRagOptions,
+  GrantWaiverResponse,
   RequestMetricsResponse,
   GoldenDatasetListResponse,
   HrLeaveRequestsResponse,
@@ -910,6 +914,74 @@ export async function listLiveQueries(userProfile: UserProfile, isLtm?: boolean)
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as LiveQueryListResponse;
+}
+
+// Phase 7 - hard-delete one captured live query, same DELETE-by-id pattern
+// deleteFeedbackAdmin()/deleteLeaveRequestAdmin() already use above.
+export async function deleteLiveQuery(
+  userProfile: UserProfile,
+  liveQueryId: number,
+): Promise<AdminDeleteLiveQueryResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/live-queries/${liveQueryId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminDeleteLiveQueryResponse;
+}
+
+// Phase 2 (hrb_chatbot_service Phase 265) - every tracked live-demo visitor.
+export async function listDemoVisitors(userProfile: UserProfile): Promise<DemoVisitorListResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/demo-visitors?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as DemoVisitorListResponse;
+}
+
+// Phase 2 - adds 15 extra queries to this conversation's effective demo
+// limit, repeatable. Body-based identity, not query-param - not a safe/
+// idempotent GET, same reasoning updateAppSetting's own PUT already uses.
+export async function grantDemoWaiver(userProfile: UserProfile, conversationId: string): Promise<GrantWaiverResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/demo-visitors/${conversationId}/grant-waiver`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as GrantWaiverResponse;
+}
+
+// Phase 8 - hard-delete one tracked demo visitor, same DELETE-by-id pattern
+// deleteFeedbackAdmin()/deleteLiveQuery() already use above, keyed on
+// conversation_id instead of a numeric id (this table's real primary key).
+export async function deleteDemoVisitor(
+  userProfile: UserProfile,
+  conversationId: string,
+): Promise<AdminDeleteDemoVisitorResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/demo-visitors/${conversationId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as AdminDeleteDemoVisitorResponse;
 }
 
 // Phase 1 - programmatically generated test cases, distinct from the
