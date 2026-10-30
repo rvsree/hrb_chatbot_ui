@@ -26,6 +26,7 @@ import {
   listLiveQueries,
   listPipelineSnapshots,
   listSyntheticDataset,
+  promoteLiveQueryToSynthetic,
 } from "../api/client";
 import AdminConversationModal from "../components/AdminConversationModal";
 import CopyButton from "../components/CopyButton";
@@ -267,6 +268,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   const [demoVisitors, setDemoVisitors] = useState<DemoVisitorSummary[]>([]);
   const [grantingWaiverIds, setGrantingWaiverIds] = useState<Set<string>>(new Set());
   const [grantWaiverError, setGrantWaiverError] = useState<string | null>(null);
+  const [promotingLiveQueryIds, setPromotingLiveQueryIds] = useState<Set<number>>(new Set());
+  const [promoteLiveQueryError, setPromoteLiveQueryError] = useState<string | null>(null);
   const [evalRuns, setEvalRuns] = useState<EvalRunSummary[]>([]);
   const [ciStatus, setCiStatus] = useState<CiStatusResponse | null>(null);
   const [ciStatusError, setCiStatusError] = useState<string | null>(null);
@@ -749,6 +752,28 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
       setGrantingWaiverIds((current) => {
         const next = new Set(current);
         next.delete(conversationId);
+        return next;
+      });
+    }
+  }
+
+  // Phase 9 - "grow your eval set from real failures/successes" made real:
+  // promotes one reviewed live query into the Synthetic Dataset. Same
+  // per-row in-flight-id-Set pattern as handleGrantDemoWaiver above.
+  async function handlePromoteLiveQuery(liveQueryId: number) {
+    setPromoteLiveQueryError(null);
+    setPromotingLiveQueryIds((current) => new Set(current).add(liveQueryId));
+    try {
+      await promoteLiveQueryToSynthetic(currentIdentity, liveQueryId);
+      await refresh();
+    } catch (err) {
+      setPromoteLiveQueryError(
+        err instanceof ApiRequestError ? err.message : "Could not promote this live query.",
+      );
+    } finally {
+      setPromotingLiveQueryIds((current) => {
+        const next = new Set(current);
+        next.delete(liveQueryId);
         return next;
       });
     }
@@ -1345,6 +1370,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
               </button>
             )}
             {bulkDeleteError && <p className="error-banner">{bulkDeleteError}</p>}
+            {promoteLiveQueryError && <p className="error-banner">{promoteLiveQueryError}</p>}
             <div className="documents-table-scroll admin-dashboard-table-scroll">
               <table className="documents-table">
                 <thead>
@@ -1368,6 +1394,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                     <th>Eval score</th>
                     <th>LTM</th>
                     <th>Captured</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1386,6 +1413,16 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                       <td>{liveQuery.eval_score ?? "-"}</td>
                       <td>{liveQuery.is_ltm ? "Yes" : "No"}</td>
                       <td>{new Date(liveQuery.created_at).toLocaleString()}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => handlePromoteLiveQuery(liveQuery.id)}
+                          disabled={promotingLiveQueryIds.has(liveQuery.id)}
+                          title="Add this real query/answer to the Synthetic Dataset for regression coverage."
+                        >
+                          {promotingLiveQueryIds.has(liveQuery.id) ? "Promoting..." : "Promote to Synthetic"}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1401,8 +1438,9 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
         {!isLoading && activeTab === "synthetic-dataset" && (
           <>
             <p className="dev-note-inline">
-              Programmatically generated test cases - cheap coverage at scale, lower trust than the hand-verified
-              Golden Dataset. Read-only. Click a row for the full case detail.
+              Programmatically generated test cases (cheap coverage at scale, lower trust than the hand-verified
+              Golden Dataset) plus real queries promoted from live traffic after admin review (Live Queries tab).
+              Read-only here. Click a row for the full case detail.
             </p>
             <div className="documents-table-scroll admin-dashboard-table-scroll">
               <table className="documents-table">
@@ -1412,6 +1450,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                     <th>Dataset</th>
                     <th>Category</th>
                     <th>Query</th>
+                    <th>Source</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1427,6 +1466,15 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                       <td>
                         {syntheticCase.query ?? "-"}
                         {syntheticCase.query && <CopyButton text={syntheticCase.query} label="query" />}
+                      </td>
+                      <td>
+                        {syntheticCase.source === "promoted_live_query" ? (
+                          <span title={`Promoted by ${syntheticCase.promoted_by ?? "-"} on ${syntheticCase.promoted_at ? new Date(syntheticCase.promoted_at).toLocaleString() : "-"}`}>
+                            Promoted (live)
+                          </span>
+                        ) : (
+                          "Curated"
+                        )}
                       </td>
                     </tr>
                   ))}

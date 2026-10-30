@@ -10,7 +10,10 @@ interface MessageBubbleProps {
 }
 
 function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const date = new Date(timestamp);
+  const datePart = date.toLocaleDateString([], { month: "2-digit", day: "2-digit", year: "numeric" });
+  const timePart = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${datePart} ${timePart}`;
 }
 
 export default function MessageBubble({ message, onOpenFeedback, onExplain }: MessageBubbleProps) {

@@ -1306,62 +1306,11 @@ export default function ChatPage() {
             tab. Same mode/role gating carried over unchanged: Multi-Agent
             RAG only, hidden for hr_support. */}
 
-        {/* Phase 144: fixes a real misread from Phase 142's own follow-up
-            instruction. "this control" in that feedback meant the
-            checkbox specifically (it's named right before that phrase) -
-            not the whole settings block. Only the checkbox is genai-rag-
-            only (ad-hoc chat doesn't exist in single/multi-agentic-rag at
-            all); Retrieval/Temperature/Embedding Model render
-            unconditionally in every mode now, full stop - no hiding, no
-            disabling, no explanatory note. This was the user's original,
-            repeated, and consistent request since Phase 141 - Phase 142
-            wrongly reversed it instead of just dropping the note text. */}
-        {/* 2026-10-19 - same "reserve the slot, don't remove it" fix as
-            the Request Unpaid Leave block above - this checkbox also used
-            to vanish from the DOM entirely outside genai-rag mode,
-            another real contributor to Settings' overall height changing
-            on every RAG Pipeline switch. 2026-10-19 round 2 - also now
-            scoped to the RAG Search tab only, same reasoning as the
-            Request Unpaid Leave block above (was visible on every
-            Settings tab, not just the one it topically belongs to). */}
-        {settingsTab === "rag-search" && (
-          <div className="tuning-bar unpaid-leave-slot">
-          {effectiveMode === "genai-rag" && (
-            <div className="checkbox-row-with-help">
-              <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
-                <input
-                  id="adhoc-chat-enabled-checkbox"
-                  type="checkbox"
-                  checked={adhocChatEnabled}
-                  onChange={(event) => {
-                    setAdhocChatEnabled(event.target.checked);
-                    // Mirrors the mode-switch cleanup above - don't leave files
-                    // attached, hidden, to a feature that's now turned off.
-                    if (!event.target.checked) {
-                      clearAdhocFiles();
-                    }
-                  }}
-                />
-                Enable GenAI Chat Workflow (attach files to ask about directly)
-              </label>
-              <DocLink featureName="genai-chat-workflow" />
-              <HelpPopover label="What is the GenAI Chat Workflow?">
-                <p>
-                  Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
-                  about it directly, instead of searching the HR knowledge base. The answer is based only on
-                  what's in the file you attached.
-                </p>
-                <p>
-                  Behind the scenes: this skips retrieval from the vector database entirely and reads your file
-                  straight into the model's context. It can also search the web for related information and, if
-                  you ask, email the answer - and it remembers earlier turns in the same attached-file
-                  conversation.
-                </p>
-              </HelpPopover>
-            </div>
-          )}
-          </div>
-        )}
+        {/* 2026-10-30 - user-directed: "Enable GenAI Chat Workflow" moved
+            out of Settings too, same reasoning as Request Unpaid Leave
+            above - now a checkbox on the left edge of the composer (see
+            composer-row below), not buried in a settings tab. Same
+            genai-rag-only gating carried over unchanged. */}
       </ConversationSidebar>
 
       <div className="chat-main">
@@ -1620,6 +1569,45 @@ export default function ChatPage() {
                   <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
               </button>
+            )}
+            {/* 2026-10-30 - moved here from Settings -> RAG Search (user-
+                directed), same "left edge of the composer" treatment as
+                Request Unpaid Leave above. Same genai-rag-only gating
+                carried over unchanged - this control still has no meaning
+                outside GenAI RAG mode. */}
+            {effectiveMode === "genai-rag" && (
+              <div className="composer-adhoc-toggle" title="Enable GenAI Chat Workflow - attach a file to ask about it directly">
+                <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
+                  <input
+                    id="adhoc-chat-enabled-checkbox"
+                    type="checkbox"
+                    checked={adhocChatEnabled}
+                    onChange={(event) => {
+                      setAdhocChatEnabled(event.target.checked);
+                      // Mirrors the mode-switch cleanup above - don't leave files
+                      // attached, hidden, to a feature that's now turned off.
+                      if (!event.target.checked) {
+                        clearAdhocFiles();
+                      }
+                    }}
+                  />
+                  GenAI Chat Workflow
+                </label>
+                <DocLink featureName="genai-chat-workflow" />
+                <HelpPopover label="What is the GenAI Chat Workflow?">
+                  <p>
+                    Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
+                    about it directly, instead of searching the HR knowledge base. The answer is based only on
+                    what's in the file you attached.
+                  </p>
+                  <p>
+                    Behind the scenes: this skips retrieval from the vector database entirely and reads your file
+                    straight into the model's context. It can also search the web for related information and, if
+                    you ask, email the answer - and it remembers earlier turns in the same attached-file
+                    conversation.
+                  </p>
+                </HelpPopover>
+              </div>
             )}
             <textarea
               ref={textareaRef}

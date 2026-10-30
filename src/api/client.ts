@@ -50,6 +50,7 @@ import type {
   PublishedFaqListResponse,
   RagQueryResponse,
   ResolveHitlRequestResponse,
+  SyntheticDatasetCaseSummary,
   SyntheticDatasetListResponse,
   UnpaidLeaveRequestResponse,
   UserProfile,
@@ -932,6 +933,26 @@ export async function deleteLiveQuery(
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as AdminDeleteLiveQueryResponse;
+}
+
+// Phase 9 (hrb_chatbot_service's own Phase 272) - promotes one reviewed
+// live query into the Synthetic Dataset. POST, not PUT - this isn't an
+// idempotent-in-the-HTTP-sense update of an existing resource, it's an
+// action (same reasoning grantDemoWaiver below already uses POST for).
+export async function promoteLiveQueryToSynthetic(
+  userProfile: UserProfile,
+  liveQueryId: number,
+): Promise<SyntheticDatasetCaseSummary> {
+  const response = await fetch(`${API_BASE_URL}/v1/admin/live-queries/${liveQueryId}/promote-to-synthetic`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_profile: userProfile }),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as SyntheticDatasetCaseSummary;
 }
 
 // Phase 2 (hrb_chatbot_service Phase 265) - every tracked live-demo visitor.

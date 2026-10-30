@@ -694,6 +694,12 @@ export interface GoldenDatasetCaseSummary {
   raw_case: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  // Phase 9 (hrb_chatbot_service's own Phase 272) - always "curated" here,
+  // present for schema parity with SyntheticDatasetCaseSummary.
+  source: string;
+  source_live_query_id: number | null;
+  promoted_by: string | null;
+  promoted_at: string | null;
 }
 
 export interface GoldenDatasetListResponse {
@@ -772,6 +778,12 @@ export interface SyntheticDatasetCaseSummary {
   raw_case: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  // Phase 9 - "curated" (generate_synthetic_dataset.py) vs
+  // "promoted_live_query" (promoted from a real live query via the admin UI).
+  source: string;
+  source_live_query_id: number | null;
+  promoted_by: string | null;
+  promoted_at: string | null;
 }
 
 export interface SyntheticDatasetListResponse {
