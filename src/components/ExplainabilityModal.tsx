@@ -2380,6 +2380,19 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
               {llmContext.turns.length === 0 && llmContext.mcp_tool_calls.length === 0 && (
                 <p>Nothing captured for this answer.</p>
               )}
+              {sources.length > 1 && (
+                <div className="panel panel-info">
+                  <span className="panel-eyebrow">Chunk Reranking</span>
+                  <p className="dev-note-inline">
+                    Before generation ever sees them, retrieved chunks go through one extra LLM call that re-ranks
+                    the whole batch by actual relevance to the query (most relevant first) - a single call for the
+                    full set, never one per chunk. The chunk order in "Response KB source" below, and in Citations
+                    on the Retrieval tab, already reflects that reranked order, not the vector store's raw
+                    similarity/MMR order. If reranking fails for any reason, it fails safe and falls back to the
+                    original retrieval order rather than blocking the answer.
+                  </p>
+                </div>
+              )}
               {llmContext.turns.map((turn, index) => {
                 // Phase 140: the reviewer-merge turn isn't a sub-question -
                 // it's the extra LLM call that combines the other turns'
@@ -2544,11 +2557,12 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
             <span className="panel-eyebrow">Retrieved Chunks ({sources.length})</span>
             {sources.length > 0 && (
               <p className="dev-note-inline">
-                Listed #1 (best) downward, in the order retrieval actually ranked them - that ranking IS the score
-                shown per chunk (similarity/MMR for vector search, BM25 for keyword, Reciprocal Rank Fusion for
-                hybrid). There is no separate ranking step later: synthesis (the Reviewer agent on multi-agentic-rag,
-                or Reflex RAG's single generation call) takes these chunks as given and writes an answer from them -
-                it doesn't re-score or reorder them.
+                Listed #1 (best) downward. The score shown per chunk (similarity/MMR for vector search, BM25 for
+                keyword, Reciprocal Rank Fusion for hybrid) is the vector store's own initial ranking - but this
+                list's actual order reflects one more step after that: a single LLM call reranks the whole retrieved
+                batch by relevance to the query before generation ever sees it (see the Chunk Reranking panel under
+                Response Generation &gt; LLM Context for details). That reranked order is what synthesis (the
+                Reviewer agent on multi-agentic-rag, or Reflex RAG's single generation call) actually receives.
               </p>
             )}
             {sources.length > 0 ? (

@@ -931,10 +931,13 @@ button.conversation-item:hover {
 
 /* 2026-10-19 - an icon-only .link-button (e.g. the message Copy button) -
    the base class's underline is meant for text links, wrong under a bare
-   icon. */
+   icon. 2026-10-30 - user-reported: inheriting .link-button's own muted
+   --text-muted color made the icon blend into the surrounding grid text
+   until hovered, so it gets its own always-visible accent color instead. */
 .link-button.icon-button {
   text-decoration: none;
   padding: 2px;
+  color: var(--accent);
 }
 
 .thumb-row {

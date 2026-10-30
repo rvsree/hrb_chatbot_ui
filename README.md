@@ -68,7 +68,8 @@ just React Context (`src/context/IdentityContext.tsx`) and the native
   rendered, not just the chat text.
 - **Admin surface** beyond the chat itself: conversations, feedback, HITL
   leave-approvals, live-query/synthetic-dataset viewers, CI/CD pipeline
-  status, and a runtime Settings page - all against the live backend APIs.
+  status, and a runtime Settings page - all against the live backend APIs,
+  Redis-cached (24h TTL, manual Refresh) for fast tab switches.
 - **End-to-end HITL workflow UI** - the unpaid-leave request/approval
   flow, not just a chat transcript.
 - **Cut over to the API Gateway** (2026-10-23), not calling the

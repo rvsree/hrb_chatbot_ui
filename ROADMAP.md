@@ -265,3 +265,25 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** a hard block on promoting below threshold (user explicitly chose "warn but allow" over this). Refetching just the 2 affected tables as a fallback to full optimistic update (user explicitly chose full optimistic update). Any change to the Live Queries row itself after a promote (it stays visible, re-promoting is already idempotent server-side).
     - **Open questions:** none blocking.
   - **Built and verified, 2026-10-30:** `npm run build` (`tsc -b && vite build`) clean. `npm run lint` shows only the same pre-existing `rules-of-hooks` error, unchanged location and cause (confirmed via `git diff HEAD` that this phase's new `useEffect` is unconditional, placed before every early return). **Not browser-verified** - no browser automation tool available this session; **not deployed** - held per the user's own explicit instruction this turn, pending their own local test.
+
+- [x] **Phase 15 (done) — Copy-icon visibility fix in Admin Dashboard grids.** User-reported, 2026-10-30, from the live AWS site - the copy icon (`CopyButton.tsx`, used in Golden Dataset/Synthetic Dataset query columns) "can be colored, as it's not visible because of the same text color in most grids."
+  - **Spec:**
+    - **Context:** `CopyButton` renders an SVG icon with `stroke="currentColor"` inside a `.link-button.icon-button`. `.link-button`'s base color is `var(--text-muted)` - the same muted gray most grid cell text already uses - so the icon only became visible on `:hover` (`.link-button:hover` switches to `var(--accent)`), making it easy to miss at rest.
+    - **Data/API contracts:** N/A - pure CSS change.
+    - **User-visible behavior:** the copy icon in every grid that uses `CopyButton` now shows in the app's accent color at rest, not just on hover - visually distinct from surrounding muted table text.
+    - **Implementation shape:** `App.css`'s `.link-button.icon-button` rule gains `color: var(--accent)`. Scoped to `.icon-button` only, not the base `.link-button` class, so text links (which rely on `--text-muted` plus an underline for affordance) are unaffected.
+    - **Failure modes:** N/A.
+    - **Out of scope:** the "Copied"/"Copy {label}" tooltip text itself - that's the browser's native `title` attribute, not stylable by this app's CSS.
+    - **Open questions:** none blocking.
+  - **Built and verified, 2026-10-30:** `npm run build` clean. Visual-only CSS change, no logic touched. Not deployed - bundled with this round's other pending fixes, held for the user's own go-ahead.
+
+- [x] **Phase 16 (done) — Surface chunk reranking in Explainability.** User-requested, 2026-10-30 - "I need re-ranking related info in an existing tab or new tab under 'Explanability -> Response generation' tab," after `hrb_chatbot_service`'s own Phase 279 added an LLM-based reranking step with no frontend visibility at all.
+  - **Spec:**
+    - **Context:** Phase 279 (backend) reorders retrieved chunks by relevance before generation, with no wire-shape change (`sources` just reflects the new order) - so there was no new field to surface, only an existing display to correct and extend. The Retrieval tab's own "Citations" panel still claimed "There is no separate ranking step later... it doesn't re-score or reorder them" - true when written, false since Phase 279 shipped.
+    - **Data/API contracts:** N/A - no backend change, this phase is read-only on data the frontend already receives (`sources`, already in reranked order).
+    - **User-visible behavior:** a new "Chunk Reranking" panel on Response Generation > LLM Context (shown whenever more than 1 chunk was retrieved) explains the reranking step and that the chunk order shown reflects it. Retrieval > Citations' own explanatory text corrected to match - no longer claims chunk order is untouched after initial retrieval.
+    - **Implementation shape:** `ExplainabilityModal.tsx` - new `panel panel-info` block inserted at the top of the `llmContext` leaf's turn list (gated on `sources.length > 1`, since reranking short-circuits for 0-1 chunks per Phase 279's own implementation). Citations panel's existing explanatory `<p>` rewritten in place, cross-referencing the new panel.
+    - **Failure modes:** N/A - static explanatory text only.
+    - **Out of scope:** a per-message "was reranking actually applied/did it fail" indicator - no field exists for that (Phase 279 deliberately made no wire-shape change), and inventing one not backed by real data would misrepresent what's actually known. A toggle to turn reranking on/off from this UI (the real kill switch, `RAG_RERANK_ENABLED`, is a backend env var - no admin UI control requested or built for it here).
+    - **Open questions:** none blocking.
+  - **Built and verified, 2026-10-30:** `npm run build` clean. Visual-only/text change, no logic touched, no new state.
