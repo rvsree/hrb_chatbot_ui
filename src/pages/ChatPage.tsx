@@ -521,6 +521,24 @@ export default function ChatPage() {
     setAdhocSessionId(null);
   }
 
+  // 2026-10-30, user-directed - Request Unpaid Leave is now always visible
+  // in the composer (was hidden unless Multi-Agent RAG was already
+  // selected in Settings - a real-world demo problem: an external user
+  // unfamiliar with this project's own RAG Pipeline setting would never
+  // know to switch modes first, and would likely never discover this
+  // control exists at all). Clicking it now switches the pipeline to
+  // Multi-Agent RAG itself (the only mode this HITL flow is wired to) -
+  // same mode-switch cleanup Settings' own dropdown already does
+  // (clearAdhocFiles, since GenAI RAG's attach-file feature doesn't
+  // apply once switched away from it) - before opening the modal.
+  function handleRequestUnpaidLeaveClick() {
+    if (selectedMode !== "multi-agentic-rag") {
+      setSelectedMode("multi-agentic-rag");
+      clearAdhocFiles();
+    }
+    setShowUnpaidLeaveModal(true);
+  }
+
   const ADHOC_EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
   function isValidEmailList(value: string): boolean {
@@ -1547,67 +1565,71 @@ export default function ChatPage() {
         )}
 
         <form className="composer" onSubmit={handleSend}>
+          {/* 2026-10-30 - user-directed: this sits OUTSIDE the gold-bordered
+              composer-row box (a sibling, not a composer-row child) - the
+              prior placement put it inside the box, which wasn't what was
+              asked. Same genai-rag-only gating carried over unchanged. */}
+          {effectiveMode === "genai-rag" && (
+            <div className="composer-adhoc-toggle" title="Enable GenAI Chat Workflow - attach a file to ask about it directly">
+              <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
+                <input
+                  id="adhoc-chat-enabled-checkbox"
+                  type="checkbox"
+                  checked={adhocChatEnabled}
+                  onChange={(event) => {
+                    setAdhocChatEnabled(event.target.checked);
+                    // Mirrors the mode-switch cleanup above - don't leave files
+                    // attached, hidden, to a feature that's now turned off.
+                    if (!event.target.checked) {
+                      clearAdhocFiles();
+                    }
+                  }}
+                />
+                GenAI Chat Workflow
+              </label>
+              <DocLink featureName="genai-chat-workflow" />
+              <HelpPopover label="What is the GenAI Chat Workflow?">
+                <p>
+                  Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
+                  about it directly, instead of searching the HR knowledge base. The answer is based only on
+                  what's in the file you attached.
+                </p>
+                <p>
+                  Behind the scenes: this skips retrieval from the vector database entirely and reads your file
+                  straight into the model's context. It can also search the web for related information and, if
+                  you ask, email the answer - and it remembers earlier turns in the same attached-file
+                  conversation.
+                </p>
+              </HelpPopover>
+            </div>
+          )}
           <div className="chat-column composer-row">
-            {/* 2026-10-21 - moved here from Settings -> RAG Search (user-
-                directed) - a persistent icon button on the left edge of the
-                composer, instead of a checkbox buried in a settings tab.
-                Same gating carried over unchanged: Multi-Agent RAG only,
-                hidden for hr_support (HR specialists use the separate
-                "Leave approvals" view instead - Admin menu). */}
-            {effectiveMode === "multi-agentic-rag" && currentIdentity.role !== "hr_support" && (
+            {/* 2026-10-30, user-directed - was an icon-only round button,
+                the actual source of repeated confusion ("looks like a
+                mic") regardless of what was actually inside it - any
+                unlabeled round button in this exact spot reads as a voice
+                control by chat-app convention. Given a visible text label
+                instead, so it's unambiguous at a glance - directly serves
+                the original "demo visibility" ask too. Always visible now
+                (was gated on Multi-Agent RAG already being selected - see
+                handleRequestUnpaidLeaveClick's own comment above for why).
+                Still hidden for hr_support - unchanged, HR specialists use
+                the separate "Leave approvals" view instead (Admin menu). */}
+            {currentIdentity.role !== "hr_support" && (
               <button
                 type="button"
-                className="mic-button"
-                title="Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability - routed to a human HR specialist to review."
-                aria-label="Request Unpaid Leave"
-                onClick={() => setShowUnpaidLeaveModal(true)}
+                className="composer-text-button"
+                title="Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability - routed to a human HR specialist to review. Switches to Multi-Agent RAG if needed."
+                onClick={handleRequestUnpaidLeaveClick}
               >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" />
                   <line x1="16" y1="2" x2="16" y2="6" />
                   <line x1="8" y1="2" x2="8" y2="6" />
                   <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
+                Request Leave
               </button>
-            )}
-            {/* 2026-10-30 - moved here from Settings -> RAG Search (user-
-                directed), same "left edge of the composer" treatment as
-                Request Unpaid Leave above. Same genai-rag-only gating
-                carried over unchanged - this control still has no meaning
-                outside GenAI RAG mode. */}
-            {effectiveMode === "genai-rag" && (
-              <div className="composer-adhoc-toggle" title="Enable GenAI Chat Workflow - attach a file to ask about it directly">
-                <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
-                  <input
-                    id="adhoc-chat-enabled-checkbox"
-                    type="checkbox"
-                    checked={adhocChatEnabled}
-                    onChange={(event) => {
-                      setAdhocChatEnabled(event.target.checked);
-                      // Mirrors the mode-switch cleanup above - don't leave files
-                      // attached, hidden, to a feature that's now turned off.
-                      if (!event.target.checked) {
-                        clearAdhocFiles();
-                      }
-                    }}
-                  />
-                  GenAI Chat Workflow
-                </label>
-                <DocLink featureName="genai-chat-workflow" />
-                <HelpPopover label="What is the GenAI Chat Workflow?">
-                  <p>
-                    Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
-                    about it directly, instead of searching the HR knowledge base. The answer is based only on
-                    what's in the file you attached.
-                  </p>
-                  <p>
-                    Behind the scenes: this skips retrieval from the vector database entirely and reads your file
-                    straight into the model's context. It can also search the web for related information and, if
-                    you ask, email the answer - and it remembers earlier turns in the same attached-file
-                    conversation.
-                  </p>
-                </HelpPopover>
-              </div>
             )}
             <textarea
               ref={textareaRef}
@@ -1624,7 +1646,7 @@ export default function ChatPage() {
                 Phase 141 adds a second, independent gate: the "Enable
                 GenAI Chat Workflow" checkbox above. Both must be true. */}
             {selectedMode === "genai-rag" && adhocChatEnabled && (
-              <label className="mic-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
+              <label className="composer-icon-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48" />
                 </svg>
@@ -1638,19 +1660,6 @@ export default function ChatPage() {
                 />
               </label>
             )}
-            <button
-              type="button"
-              className="mic-button"
-              title="Audio input (coming soon)"
-              aria-label="Audio input (coming soon)"
-              onClick={() => window.alert("Audio feature not available yet.")}
-            >
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="2" width="6" height="12" rx="3" />
-                <path d="M5 11a7 7 0 0 0 14 0" />
-                <line x1="12" y1="18" x2="12" y2="22" />
-              </svg>
-            </button>
             <button type="submit" disabled={isSending || !draft.trim()}>
               {isSending ? "Asking..." : "Send"}
             </button>

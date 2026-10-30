@@ -982,6 +982,14 @@ button.conversation-item:hover {
   padding: 16px 20px 20px;
   background: var(--surface-sunken);
   border-top: 1px solid var(--border);
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.composer .composer-row {
+  flex: 1;
+  min-width: 0;
 }
 
 .composer-row {
@@ -1005,18 +1013,25 @@ button.conversation-item:hover {
 }
 
 /* 2026-10-30 - "Enable GenAI Chat Workflow" checkbox, moved here from
-   Settings -> RAG Search (user-directed). Composer-row siblings are all
-   36px-tall icon buttons, so this stays flex-shrink: 0 and compact
-   (small font, no wrap) to sit alongside them without stretching the
-   row. */
+   Settings -> RAG Search (user-directed, 3rd round) - a real framed box of
+   its own to the left of .composer-row's gold-bordered box, not an
+   unframed sibling sitting loose beside it. Its own neutral border/surface
+   (not gold - that's .composer-row's own identity) makes it read as a
+   distinct control, same "settled, don't shift" height (36px) as every
+   icon button it sits beside. */
 .composer-adhoc-toggle {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   height: 36px;
+  padding: 0 10px;
   font-size: 12px;
   white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .composer-adhoc-toggle .checkbox-label {
@@ -1025,7 +1040,12 @@ button.conversation-item:hover {
   gap: 4px;
 }
 
-.mic-button {
+/* 2026-10-30, user-directed - renamed from .mic-button: that name was
+   left over from the removed audio-input feature and caused real
+   confusion once it was reused by 2 unrelated icons (Request Unpaid
+   Leave, file-attach) - both are round gold buttons, easy to mistake for
+   a leftover mic. No feature behavior changed, class name only. */
+.composer-icon-button {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -1039,7 +1059,35 @@ button.conversation-item:hover {
   cursor: pointer;
 }
 
-.mic-button:hover {
+.composer-icon-button:hover {
+  background: var(--gold);
+  color: var(--accent-contrast);
+}
+
+/* 2026-10-30, user-directed - Request Leave: a labeled pill, not a round
+   icon-only button like .composer-icon-button above - that shape reads
+   as a voice/mic control by chat-app convention regardless of its own
+   icon content, confirmed the real, repeated cause of this control being
+   misread. A visible text label removes the ambiguity entirely, and
+   doubles as the "demo visibility" fix this control was re-added for. */
+.composer-text-button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--gold);
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.composer-text-button:hover {
   background: var(--gold);
   color: var(--accent-contrast);
 }

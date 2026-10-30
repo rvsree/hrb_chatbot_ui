@@ -113,6 +113,17 @@ async function parseErrorAndThrow(response: Response): Promise<never> {
   throw new ApiRequestError(message, code, response.status);
 }
 
+// 2026-10-30, user-directed - the Admin Dashboard's own Redis read-through
+// cache (hrb_chatbot_service Phase 276, 24h TTL). Every cached list route
+// accepts this same force_refresh query param to bypass a stale entry -
+// a tab's own manual "Refresh" button passes true, an ordinary load omits it.
+function withForceRefresh(params: URLSearchParams, forceRefresh?: boolean): URLSearchParams {
+  if (forceRefresh) {
+    params.set("force_refresh", "true");
+  }
+  return params;
+}
+
 // Phase 163 - the 3 new, deliberately optional fields all default to "off"
 // server-side too (no session_id -> a fresh session; no
 // send_email_on_answer -> the model's own in-text decision is still the
@@ -775,12 +786,18 @@ export async function resolveUnpaidLeaveRequest(
 // Phase 168 - admin dashboard. Documents reuse listDocuments()/
 // deleteDocumentById() above unchanged - the backend route is identical,
 // just its RBAC widened to also accept the admin role.
-export async function listAllConversationsAdmin(userProfile: UserProfile): Promise<AdminConversationListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listAllConversationsAdmin(
+  userProfile: UserProfile,
+  forceRefresh?: boolean,
+): Promise<AdminConversationListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   const response = await fetch(`${API_BASE_URL}/v1/admin/conversations?${params.toString()}`);
 
   if (!response.ok) {
@@ -822,12 +839,18 @@ export async function deleteConversationAdmin(
   return (await response.json()) as AdminDeleteConversationResponse;
 }
 
-export async function listAllFeedbackAdmin(userProfile: UserProfile): Promise<FeedbackListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listAllFeedbackAdmin(
+  userProfile: UserProfile,
+  forceRefresh?: boolean,
+): Promise<FeedbackListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   const response = await fetch(`${API_BASE_URL}/v1/admin/feedback?${params.toString()}`);
 
   if (!response.ok) {
@@ -870,12 +893,18 @@ export async function deleteLeaveRequestAdmin(
 
 // Phase 170 (round 1) - the admin-only docs viewer.
 
-export async function listAdminDocs(userProfile: UserProfile): Promise<AdminDocListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listAdminDocs(
+  userProfile: UserProfile,
+  forceRefresh?: boolean,
+): Promise<AdminDocListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   const response = await fetch(`${API_BASE_URL}/v1/admin/docs?${params.toString()}`);
 
   if (!response.ok) {
@@ -884,12 +913,18 @@ export async function listAdminDocs(userProfile: UserProfile): Promise<AdminDocL
   return (await response.json()) as AdminDocListResponse;
 }
 
-export async function listGoldenDataset(userProfile: UserProfile): Promise<GoldenDatasetListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listGoldenDataset(
+  userProfile: UserProfile,
+  forceRefresh?: boolean,
+): Promise<GoldenDatasetListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   const response = await fetch(`${API_BASE_URL}/v1/admin/golden-dataset?${params.toString()}`);
 
   if (!response.ok) {
@@ -900,12 +935,19 @@ export async function listGoldenDataset(userProfile: UserProfile): Promise<Golde
 
 // Phase 1 - real production queries captured when their live groundedness
 // score crossed the configurable LTM threshold (or didn't - isLtm filters).
-export async function listLiveQueries(userProfile: UserProfile, isLtm?: boolean): Promise<LiveQueryListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listLiveQueries(
+  userProfile: UserProfile,
+  isLtm?: boolean,
+  forceRefresh?: boolean,
+): Promise<LiveQueryListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   if (isLtm !== undefined) {
     params.set("is_ltm", String(isLtm));
   }
@@ -1007,12 +1049,18 @@ export async function deleteDemoVisitor(
 
 // Phase 1 - programmatically generated test cases, distinct from the
 // hand-curated golden dataset above.
-export async function listSyntheticDataset(userProfile: UserProfile): Promise<SyntheticDatasetListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listSyntheticDataset(
+  userProfile: UserProfile,
+  forceRefresh?: boolean,
+): Promise<SyntheticDatasetListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   const response = await fetch(`${API_BASE_URL}/v1/admin/synthetic-dataset?${params.toString()}`);
 
   if (!response.ok) {
@@ -1054,12 +1102,18 @@ export async function updateAppSetting(
   return (await response.json()) as AppSettingResponse;
 }
 
-export async function listEvalRuns(userProfile: UserProfile): Promise<EvalRunListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listEvalRuns(
+  userProfile: UserProfile,
+  forceRefresh?: boolean,
+): Promise<EvalRunListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   const response = await fetch(`${API_BASE_URL}/v1/admin/eval-runs?${params.toString()}`);
 
   if (!response.ok) {
@@ -1256,12 +1310,18 @@ export async function listPublishedFaqs(userProfile: UserProfile): Promise<Publi
   return (await response.json()) as PublishedFaqListResponse;
 }
 
-export async function listFaqSubmissions(userProfile: UserProfile): Promise<FaqSubmissionListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listFaqSubmissions(
+  userProfile: UserProfile,
+  forceRefresh?: boolean,
+): Promise<FaqSubmissionListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   const response = await fetch(`${API_BASE_URL}/v1/admin/faq-submissions?${params.toString()}`);
 
   if (!response.ok) {
@@ -1308,12 +1368,19 @@ export async function reviewFaqSubmission(
 }
 
 // Phase 187 - Interview Q&A as real, editable DB rows, filterable by topic.
-export async function listInterviewQaCards(userProfile: UserProfile, topic?: string): Promise<InterviewQaListResponse> {
-  const params = new URLSearchParams({
-    employee_id: userProfile.employee_id,
-    full_name: userProfile.full_name,
-    role: userProfile.role,
-  });
+export async function listInterviewQaCards(
+  userProfile: UserProfile,
+  topic?: string,
+  forceRefresh?: boolean,
+): Promise<InterviewQaListResponse> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
   if (topic) {
     params.set("topic", topic);
   }

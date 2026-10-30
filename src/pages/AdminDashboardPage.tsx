@@ -9,6 +9,7 @@ import {
   deleteLeaveRequestAdmin,
   deleteLiveQuery,
   getAdminDocContent,
+  getAppSetting,
   getCiStatus,
   getEvalRun,
   getPipelineSnapshot,
@@ -32,6 +33,7 @@ import AdminConversationModal from "../components/AdminConversationModal";
 import CopyButton from "../components/CopyButton";
 import AdminFeedbackModal from "../components/AdminFeedbackModal";
 import AwsDemoPanel from "../components/AwsDemoPanel";
+import ConfirmModal from "../components/ConfirmModal";
 import HelpPopover from "../components/HelpPopover";
 import InterviewQaCardView from "../components/InterviewQaCardView";
 import InterviewQaEditorModal from "../components/InterviewQaEditorModal";
@@ -270,6 +272,13 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   const [grantWaiverError, setGrantWaiverError] = useState<string | null>(null);
   const [promotingLiveQueryIds, setPromotingLiveQueryIds] = useState<Set<number>>(new Set());
   const [promoteLiveQueryError, setPromoteLiveQueryError] = useState<string | null>(null);
+  // 2026-10-30 - "warn but allow" gate for Promote to Synthetic: the real
+  // default the backend falls back to (eval_threshold.py), fetched once so
+  // the confirm dialog below compares against the real configured value,
+  // not a guessed constant.
+  const [ltmScoreThreshold, setLtmScoreThreshold] = useState<number>(0.6);
+  const [promoteConfirmTarget, setPromoteConfirmTarget] = useState<LiveQuerySummary | null>(null);
+  const [refreshingTab, setRefreshingTab] = useState<AdminTab | null>(null);
   const [evalRuns, setEvalRuns] = useState<EvalRunSummary[]>([]);
   const [ciStatus, setCiStatus] = useState<CiStatusResponse | null>(null);
   const [ciStatusError, setCiStatusError] = useState<string | null>(null);
@@ -477,6 +486,31 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, activeTab, selectedApplication, ciStatusPage]);
 
+  // 2026-10-30 - fetches the real ltm_score_threshold once identity is
+  // available, so the Promote-to-Synthetic warning dialog below compares
+  // against the actually-configured value. A fetch failure just keeps the
+  // 0.6 fallback already in state - same documented default
+  // eval_threshold.py itself falls back to.
+  useEffect(() => {
+    if (!identity || identity.role !== "admin") {
+      return;
+    }
+    let cancelled = false;
+    getAppSetting(identity, "ltm_score_threshold")
+      .then((result) => {
+        if (cancelled) return;
+        if (typeof result.value === "number") {
+          setLtmScoreThreshold(result.value);
+        }
+      })
+      .catch(() => {
+        // Keep the 0.6 fallback - not worth a dedicated error state for this.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity]);
+
   if (!identity) {
     navigate("/login");
     return null;
@@ -629,20 +663,121 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     setSet(set.size === ids.length ? new Set() : new Set(ids));
   }
 
-  async function bulkDelete<T>(ids: Set<T>, setSet: (next: Set<T>) => void, deleteOne: (id: T) => Promise<unknown>) {
+  // 2026-10-30, user-directed - was a full-dashboard refresh() (11 parallel
+  // re-fetches) after every bulk delete, for every tab that uses this
+  // helper. Now removes only the ids that actually succeeded from that
+  // tab's own list state directly - no extra API call at all. Per-id
+  // success/failure is tracked by zipping idList with Promise.allSettled's
+  // same-order results, since allSettled alone only gives a pass/fail
+  // count, not which id was which.
+  async function bulkDelete<T>(
+    ids: Set<T>,
+    setSet: (next: Set<T>) => void,
+    deleteOne: (id: T) => Promise<unknown>,
+    removeFromList: (succeededIds: Set<T>) => void,
+  ) {
     if (ids.size === 0) {
       return;
     }
     setIsBulkDeleting(true);
     setBulkDeleteError(null);
-    const results = await Promise.allSettled(Array.from(ids).map((id) => deleteOne(id)));
-    const failedCount = results.filter((r) => r.status === "rejected").length;
+    const idList = Array.from(ids);
+    const results = await Promise.allSettled(idList.map((id) => deleteOne(id)));
+    const succeededIds = new Set<T>();
+    let failedCount = 0;
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        succeededIds.add(idList[index]);
+      } else {
+        failedCount += 1;
+      }
+    });
     if (failedCount > 0) {
-      setBulkDeleteError(`${failedCount} of ${ids.size} deletes failed. The rest succeeded - refreshing the list.`);
+      setBulkDeleteError(`${failedCount} of ${ids.size} deletes failed. The rest succeeded.`);
     }
+    removeFromList(succeededIds);
     setSet(new Set());
     setIsBulkDeleting(false);
-    await refresh();
+  }
+
+  // 2026-10-30, user-directed - manual per-tab "Refresh" for the 8 tabs
+  // now backed by the Admin Dashboard's own 24h Redis cache
+  // (hrb_chatbot_service Phase 276). force_refresh=true bypasses that
+  // cache for exactly this one call and re-populates it, so this is also
+  // how a cached tab ever sees data newer than its own last fetch without
+  // waiting out the TTL.
+  async function handleRefreshTab(tab: AdminTab) {
+    setRefreshingTab(tab);
+    try {
+      switch (tab) {
+        case "conversations": {
+          const result = await listAllConversationsAdmin(currentIdentity, true);
+          setConversations(result.conversations);
+          break;
+        }
+        case "feedback": {
+          const result = await listAllFeedbackAdmin(currentIdentity, true);
+          setFeedback(result.feedback);
+          break;
+        }
+        case "docs": {
+          const result = await listAdminDocs(currentIdentity, true);
+          setDocs(result.docs);
+          break;
+        }
+        case "golden-dataset": {
+          const result = await listGoldenDataset(currentIdentity, true);
+          setGoldenDatasetCases(result.cases);
+          break;
+        }
+        case "live-queries": {
+          const result = await listLiveQueries(
+            currentIdentity,
+            liveQueryLtmFilter === "all" ? undefined : liveQueryLtmFilter === "ltm",
+            true,
+          );
+          setLiveQueries(result.queries);
+          break;
+        }
+        case "synthetic-dataset": {
+          const result = await listSyntheticDataset(currentIdentity, true);
+          setSyntheticDatasetCases(result.cases);
+          break;
+        }
+        case "eval-runs": {
+          const result = await listEvalRuns(currentIdentity, true);
+          setEvalRuns(result.runs);
+          break;
+        }
+        case "interview-qa": {
+          const result = await listInterviewQaCards(currentIdentity, interviewQaTopicFilter || undefined, true);
+          setInterviewQaCards(result.cards);
+          break;
+        }
+        default:
+          break;
+      }
+    } catch {
+      // Best-effort - the tab just keeps showing its previous data rather
+      // than a dedicated error state for this one control.
+    } finally {
+      setRefreshingTab(null);
+    }
+  }
+
+  function RefreshTabButton({ tab }: { tab: AdminTab }) {
+    return (
+      <button
+        type="button"
+        className="secondary"
+        style={{ marginBottom: 12 }}
+        onClick={() => handleRefreshTab(tab)}
+        disabled={refreshingTab === tab}
+        title="Bypass this tab's cache and load the real current data"
+      >
+        {refreshingTab === tab ? "Refreshing..." : "Refresh"}
+      </button>
+    );
   }
 
   // Phase 191 - guards a bookmarked/typed ?tab= deep-link into a DevOps-
@@ -728,7 +863,9 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     setInterviewQaDeleteError(null);
     try {
       await deleteInterviewQaCard(currentIdentity, cardId);
-      await refresh();
+      // 2026-10-30, user-directed - was a full-dashboard refresh() for one
+      // deleted row; removes it from local state directly instead.
+      setInterviewQaCards((current) => current.filter((c) => c.id !== cardId));
     } catch (err) {
       setInterviewQaDeleteError(err instanceof ApiRequestError ? err.message : "Could not delete this card.");
     }
@@ -742,8 +879,17 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     setGrantWaiverError(null);
     setGrantingWaiverIds((current) => new Set(current).add(conversationId));
     try {
-      await grantDemoWaiver(currentIdentity, conversationId);
-      await refresh();
+      const result = await grantDemoWaiver(currentIdentity, conversationId);
+      // 2026-10-30, user-directed - was a full-dashboard refresh() for one
+      // changed row; the real response already carries this visitor's new
+      // waiver_count/effective_limit, merged into state directly.
+      setDemoVisitors((current) =>
+        current.map((visitor) =>
+          visitor.conversation_id === conversationId
+            ? { ...visitor, waiver_count: result.waiver_count, effective_limit: result.effective_limit }
+            : visitor,
+        ),
+      );
     } catch (err) {
       setGrantWaiverError(
         err instanceof ApiRequestError ? err.message : "Could not grant a waiver for this visitor.",
@@ -760,12 +906,23 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
   // Phase 9 - "grow your eval set from real failures/successes" made real:
   // promotes one reviewed live query into the Synthetic Dataset. Same
   // per-row in-flight-id-Set pattern as handleGrantDemoWaiver above.
-  async function handlePromoteLiveQuery(liveQueryId: number) {
+  //
+  // 2026-10-30, user-directed: "warn but allow" gate on the ltm_score_threshold
+  // (same 0.6 default as the backend's own live-query LTM/answer-cache gates) -
+  // a row below it still shows a confirm dialog naming the real score and
+  // threshold, but an admin can override and promote anyway. Also replaces the
+  // old full-dashboard refresh() (11 parallel re-fetches for one changed row)
+  // with an optimistic local update: the real promote response already IS the
+  // new Synthetic Dataset row, so it's appended directly - no extra API call.
+  async function doPromoteLiveQuery(liveQueryId: number) {
     setPromoteLiveQueryError(null);
     setPromotingLiveQueryIds((current) => new Set(current).add(liveQueryId));
     try {
-      await promoteLiveQueryToSynthetic(currentIdentity, liveQueryId);
-      await refresh();
+      const newCase = await promoteLiveQueryToSynthetic(currentIdentity, liveQueryId);
+      setSyntheticDatasetCases((current) => {
+        const withoutStaleVersion = current.filter((existing) => existing.id !== newCase.id);
+        return [...withoutStaleVersion, newCase];
+      });
     } catch (err) {
       setPromoteLiveQueryError(
         err instanceof ApiRequestError ? err.message : "Could not promote this live query.",
@@ -777,6 +934,14 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
         return next;
       });
     }
+  }
+
+  function handlePromoteLiveQueryClick(liveQuery: LiveQuerySummary) {
+    if (liveQuery.eval_score !== null && liveQuery.eval_score < ltmScoreThreshold) {
+      setPromoteConfirmTarget(liveQuery);
+      return;
+    }
+    void doPromoteLiveQuery(liveQuery.id);
   }
 
   async function handleLiveQueryLtmFilterChange(next: "all" | "ltm" | "not-ltm") {
@@ -1044,12 +1209,17 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "conversations" && (
           <>
+            <RefreshTabButton tab="conversations" />
             {checkedConversationIds.size > 0 && (
               <button
                 type="button"
                 onClick={() =>
-                  bulkDelete(checkedConversationIds, setCheckedConversationIds, (id) =>
-                    deleteConversationAdmin(currentIdentity, id),
+                  bulkDelete(
+                    checkedConversationIds,
+                    setCheckedConversationIds,
+                    (id) => deleteConversationAdmin(currentIdentity, id),
+                    (succeeded) =>
+                      setConversations((current) => current.filter((c) => !succeeded.has(c.conversation_id))),
                   )
                 }
                 disabled={isBulkDeleting}
@@ -1117,11 +1287,17 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "feedback" && (
           <>
+            <RefreshTabButton tab="feedback" />
             {checkedFeedbackIds.size > 0 && (
               <button
                 type="button"
                 onClick={() =>
-                  bulkDelete(checkedFeedbackIds, setCheckedFeedbackIds, (id) => deleteFeedbackAdmin(currentIdentity, id))
+                  bulkDelete(
+                    checkedFeedbackIds,
+                    setCheckedFeedbackIds,
+                    (id) => deleteFeedbackAdmin(currentIdentity, id),
+                    (succeeded) => setFeedback((current) => current.filter((f) => !succeeded.has(f.id))),
+                  )
                 }
                 disabled={isBulkDeleting}
               >
@@ -1186,8 +1362,14 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
               <button
                 type="button"
                 onClick={() =>
-                  bulkDelete(checkedLeaveRequestIds, setCheckedLeaveRequestIds, (id) =>
-                    deleteLeaveRequestAdmin(currentIdentity, id),
+                  bulkDelete(
+                    checkedLeaveRequestIds,
+                    setCheckedLeaveRequestIds,
+                    (id) => deleteLeaveRequestAdmin(currentIdentity, id),
+                    (succeeded) =>
+                      setLeaveRequests((current) =>
+                        current.filter((r) => !succeeded.has(r.hitl_request_context_id)),
+                      ),
                   )
                 }
                 disabled={isBulkDeleting}
@@ -1261,6 +1443,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "docs" && (
           <>
+            <RefreshTabButton tab="docs" />
             <p className="dev-note-inline">
               Architecture/design docs for each use case, synced from <code>docs/dev-reference/</code> to S3. Click a
               row to open it in a new tab.
@@ -1302,6 +1485,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "golden-dataset" && (
           <>
+            <RefreshTabButton tab="golden-dataset" />
             <p className="dev-note-inline">
               Deployment Dashboard, part 1 - every golden-dataset case (genai-rag and NFR), mirrored from
               resources/golden_dataset/*.json. Read-only. Click a row for the full case detail.
@@ -1342,6 +1526,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "live-queries" && (
           <>
+            <RefreshTabButton tab="live-queries" />
             <p className="dev-note-inline">
               Real production questions, scored by the same live groundedness judge every answer already gets.
               Queries scoring above the LTM threshold (Settings &rarr; Memory) are promoted to{" "}
@@ -1362,7 +1547,12 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
               <button
                 type="button"
                 onClick={() =>
-                  bulkDelete(checkedLiveQueryIds, setCheckedLiveQueryIds, (id) => deleteLiveQuery(currentIdentity, id))
+                  bulkDelete(
+                    checkedLiveQueryIds,
+                    setCheckedLiveQueryIds,
+                    (id) => deleteLiveQuery(currentIdentity, id),
+                    (succeeded) => setLiveQueries((current) => current.filter((q) => !succeeded.has(q.id))),
+                  )
                 }
                 disabled={isBulkDeleting}
               >
@@ -1416,7 +1606,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                       <td>
                         <button
                           type="button"
-                          onClick={() => handlePromoteLiveQuery(liveQuery.id)}
+                          onClick={() => handlePromoteLiveQueryClick(liveQuery)}
                           disabled={promotingLiveQueryIds.has(liveQuery.id)}
                           title="Add this real query/answer to the Synthetic Dataset for regression coverage."
                         >
@@ -1437,6 +1627,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "synthetic-dataset" && (
           <>
+            <RefreshTabButton tab="synthetic-dataset" />
             <p className="dev-note-inline">
               Programmatically generated test cases (cheap coverage at scale, lower trust than the hand-verified
               Golden Dataset) plus real queries promoted from live traffic after admin review (Live Queries tab).
@@ -1450,6 +1641,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                     <th>Dataset</th>
                     <th>Category</th>
                     <th>Query</th>
+                    <th>Eval score</th>
                     <th>Source</th>
                   </tr>
                 </thead>
@@ -1466,6 +1658,16 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
                       <td>
                         {syntheticCase.query ?? "-"}
                         {syntheticCase.query && <CopyButton text={syntheticCase.query} label="query" />}
+                      </td>
+                      {/* 2026-10-30 - only "promoted_live_query" rows carry a real
+                          eval_score (captured from the source live query at
+                          promote time) - a curated/generated row's raw_case
+                          never had one, so "-" there is a real absence, not a
+                          loading gap. */}
+                      <td>
+                        {typeof syntheticCase.raw_case.eval_score === "number"
+                          ? syntheticCase.raw_case.eval_score.toFixed(2)
+                          : "-"}
                       </td>
                       <td>
                         {syntheticCase.source === "promoted_live_query" ? (
@@ -1500,8 +1702,12 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
               <button
                 type="button"
                 onClick={() =>
-                  bulkDelete(checkedDemoVisitorIds, setCheckedDemoVisitorIds, (id) =>
-                    deleteDemoVisitor(currentIdentity, id),
+                  bulkDelete(
+                    checkedDemoVisitorIds,
+                    setCheckedDemoVisitorIds,
+                    (id) => deleteDemoVisitor(currentIdentity, id),
+                    (succeeded) =>
+                      setDemoVisitors((current) => current.filter((v) => !succeeded.has(v.conversation_id))),
                   )
                 }
                 disabled={isBulkDeleting}
@@ -1583,6 +1789,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "eval-runs" && (
           <>
+            <RefreshTabButton tab="eval-runs" />
             <p className="dev-note-inline">
               Deployment Dashboard, part 2 - every scripts/run_release_gate.py run on record. Read-only. Click a row
               for every case's own score in that run.
@@ -1852,6 +2059,7 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
 
         {!isLoading && activeTab === "interview-qa" && (
           <>
+            <RefreshTabButton tab="interview-qa" />
             <p className="dev-note-inline">
               Interview Q&A cards - a real, editable DB table (not just static HTML), migrated from the two
               interview-faqs pages. Filter by topic, view a card in its real themed layout, edit, delete, or add new
@@ -2000,6 +2208,24 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
         </div>
       )}
 
+      {promoteConfirmTarget && (
+        <ConfirmModal
+          title="Promote below the LTM threshold?"
+          message={
+            `This query's eval score (${promoteConfirmTarget.eval_score ?? "-"}) is below the current ` +
+            `LTM threshold (${ltmScoreThreshold}). Promoting it anyway adds a lower-confidence answer to the ` +
+            `Synthetic Dataset - the regression suite will treat it as a correct reference answer going forward.`
+          }
+          confirmLabel="Promote anyway"
+          onConfirm={() => {
+            const liveQueryId = promoteConfirmTarget.id;
+            setPromoteConfirmTarget(null);
+            void doPromoteLiveQuery(liveQueryId);
+          }}
+          onCancel={() => setPromoteConfirmTarget(null)}
+        />
+      )}
+
       {viewingInterviewQaCard && (
         <div className="modal-overlay" onClick={() => setViewingInterviewQaCard(null)}>
           <div className="modal-card" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 640 }}>
@@ -2024,7 +2250,17 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           onSaved={() => {
             setIsAddingInterviewQaCard(false);
             setEditingInterviewQaCard(null);
-            refresh();
+            // 2026-10-30, user-directed - was a full-dashboard refresh();
+            // a create/edit doesn't hand this callback the saved card back
+            // (InterviewQaEditorModal's own onSaved is () => void), so a
+            // targeted single-resource re-fetch is the next-best thing
+            // short of changing that modal's prop contract - still 1 API
+            // call instead of 11. force_refresh=true - this route is now
+            // Redis-cached (Phase 276/backend), so an ordinary re-fetch
+            // here would serve the stale pre-save list back.
+            listInterviewQaCards(currentIdentity, undefined, true)
+              .then((result) => setInterviewQaCards(result.cards))
+              .catch(() => {});
           }}
         />
       )}
@@ -2034,8 +2270,12 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           conversation={selectedConversation}
           onClose={() => setSelectedConversation(null)}
           onDeleted={() => {
+            const deletedId = selectedConversation.conversation_id;
             setSelectedConversation(null);
-            refresh();
+            // 2026-10-30, user-directed - the deleted conversation is
+            // already known here (the modal's own prop) - remove it
+            // directly instead of a full-dashboard refresh().
+            setConversations((current) => current.filter((c) => c.conversation_id !== deletedId));
           }}
         />
       )}
@@ -2044,8 +2284,9 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           entry={selectedFeedback}
           onClose={() => setSelectedFeedback(null)}
           onDeleted={() => {
+            const deletedId = selectedFeedback.id;
             setSelectedFeedback(null);
-            refresh();
+            setFeedback((current) => current.filter((f) => f.id !== deletedId));
           }}
         />
       )}
@@ -2055,7 +2296,13 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
           onClose={() => setSelectedLeaveRequest(null)}
           onResolved={() => {
             setSelectedLeaveRequest(null);
-            refresh();
+            // 2026-10-30, user-directed - was a full-dashboard refresh();
+            // LeaveReviewModal's own onResolved is () => void too, so this
+            // is the same targeted single-resource re-fetch as the
+            // Interview Q&A case above.
+            listAllLeaveRequests(currentIdentity)
+              .then((result) => setLeaveRequests(result.requests))
+              .catch(() => {});
           }}
         />
       )}
