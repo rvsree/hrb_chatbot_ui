@@ -5,7 +5,18 @@ import { useState, type MouseEvent } from "react";
 // MessageBubble.tsx (where this started) into its own file so Golden
 // Dataset/Synthetic Dataset's own query columns can reuse the exact same
 // component instead of a second copy of the same logic.
-export default function CopyButton({ text, label = "content" }: { text: string; label?: string }) {
+export default function CopyButton({
+  text,
+  label = "content",
+  onCopied,
+}: {
+  text: string;
+  label?: string;
+  // Phase 18 - the login page's sample-credentials hint also fills the
+  // matching form field on a successful copy, not just the clipboard.
+  // Optional, every other call site is unaffected.
+  onCopied?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy(event: MouseEvent) {
@@ -16,6 +27,7 @@ export default function CopyButton({ text, label = "content" }: { text: string; 
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      onCopied?.();
     } catch {
       // Clipboard API can be refused (older desktop apps, some webviews) -
       // nothing to fall back to here (no stable DOM node to select from) -

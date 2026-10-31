@@ -15,11 +15,6 @@ const SAMPLE_PERSONAS: Partial<Record<Role, { employeeId: string; fullName: stri
   manager: { employeeId: "EMP053", fullName: "Mia Manager" },
   hr_support: { employeeId: "EMP051", fullName: "Hana Support" },
 };
-const ROLE_LABELS: Partial<Record<Role, string>> = {
-  employee: "an Employee",
-  manager: "a Manager",
-  hr_support: "HR Support",
-};
 
 export default function LoginPage() {
   const { login } = useIdentity();
@@ -195,14 +190,22 @@ export default function LoginPage() {
 
         {samplePersona && (
           <div className="dev-note login-assistance">
-            <strong>Login Assistance</strong> — don't have a login? Try this sample for {ROLE_LABELS[role]}:
+            <strong>Login Assistance</strong> — try these credentials:
             <div className="login-sample-row">
               <span>Employee ID: <strong>{samplePersona.employeeId}</strong></span>
-              <CopyButton text={samplePersona.employeeId} label="sample employee ID" />
+              <CopyButton
+                text={samplePersona.employeeId}
+                label="sample employee ID"
+                onCopied={() => setEmployeeId(samplePersona.employeeId)}
+              />
             </div>
             <div className="login-sample-row">
               <span>Full name: <strong>{samplePersona.fullName}</strong></span>
-              <CopyButton text={samplePersona.fullName} label="sample full name" />
+              <CopyButton
+                text={samplePersona.fullName}
+                label="sample full name"
+                onCopied={() => setFullName(samplePersona.fullName)}
+              />
             </div>
             <a
               className="login-assistance-link"
