@@ -2,7 +2,8 @@
 
 React + TypeScript + Vite frontend for `hrb_chatbot_service` (a separate repo,
 deliberately - see
-[`hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/deployment-guide/07-reactjs-ui.html`](../docs/deployment-and-ops/deployment-guide/07-reactjs-ui.html)).
+[`07-reactjs-ui.html`](https://github.com/rvsree/hrb_chatbot_service/blob/master/docs/dev-reference/hrb_chatbot_v3/deployment-and-ops/deployment-guide/07-reactjs-ui.html)
+in the `hrb_chatbot_service` repo).
 Deploys to S3 + CloudFront, not App Runner - its own build/deploy pipeline,
 decoupled from the backend's.
 
@@ -17,6 +18,18 @@ to end. Backend App Runner services (`hrb_chatbot_service`,
 if the first request hangs rather than failing outright, they're spinning
 back up (~30-60s cold start), not broken; see the platform's own
 `PLATFORM-HANDOFF.md` for the pause/resume script.
+
+### Viewing the architecture docs
+
+This repo's `.html`/`.drawio` architecture docs (and the shared ones in
+`hrb_emp_assist`) **render correctly only through the live Admin
+Dashboard's docs viewer, or opened directly in a browser/draw.io** -
+GitHub's own file preview always shows these as raw source text, never a
+rendered page (GitHub forces `Content-Type: text/plain` on every raw
+file, including `.html`, as an anti-XSS measure - not a bug in this
+project). To see them rendered: log in to the live demo's Admin
+Dashboard as `ADM001` and open the **Architecture Docs** tab, or clone
+the repo and open the file locally.
 
 ## Tech Stack
 
@@ -80,16 +93,20 @@ just React Context (`src/context/IdentityContext.tsx`) and the native
 
 ## Diagrams and cross-service docs
 
-[Current state architecture](../docs/architecture/diagrams/hrb-chatbot-ui-current-state-architecture.drawio)
+These live in the shared `hrb_emp_assist` repo, not duplicated here - see
+["Viewing the architecture docs"](#viewing-the-architecture-docs) above
+for why GitHub shows them as raw source rather than rendering them.
+
+[Current state architecture](https://github.com/rvsree/hrb_emp_assist/blob/master/docs/architecture/diagrams/hrb-chatbot-ui-current-state-architecture.drawio)
 (editable `.drawio`) - the 12 pages and the one API client they share.
 No target-state or `.drawio` deployment diagram exists for this repo yet -
 a static SPA behind CloudFront doesn't have the same scaling story the
 backend services do; see the
-[build process](../docs/deployment-and-ops/build-and-deploy/01a-hrb-chatbot-ui-build-process.html)
+[build process](https://github.com/rvsree/hrb_emp_assist/blob/master/docs/deployment-and-ops/build-and-deploy/01a-hrb-chatbot-ui-build-process.html)
 and
-[deployment architecture](../docs/deployment-and-ops/build-and-deploy/01b-hrb-chatbot-ui-deployment-architecture.html)
+[deployment architecture](https://github.com/rvsree/hrb_emp_assist/blob/master/docs/deployment-and-ops/build-and-deploy/01b-hrb-chatbot-ui-deployment-architecture.html)
 HTML docs instead. For the cross-service picture, start at
-[`platform-overview.html`](../docs/architecture/platform-overview.html).
+[`platform-overview.html`](https://github.com/rvsree/hrb_emp_assist/blob/master/docs/architecture/platform-overview.html).
 
 ## Environments
 
@@ -187,7 +204,7 @@ than describing what the screen looked like.
 
 Built against `hrb_chatbot_service`'s actual API contracts, not invented ones -
 see that repo's
-[`docs/dev-reference/_archive/ui-wireframes-review.html`](../hrb_chatbot_service/docs/dev-reference/_archive/ui-wireframes-review.html)
+[`ui-wireframes-review.html`](https://github.com/rvsree/hrb_chatbot_service/blob/master/docs/dev-reference/_archive/ui-wireframes-review.html)
 for the original audit (archived 2026-10-23 - pre-build material, not
 stale information, kept for the historical record). Updated 2026-10-07 - two of
 the three gaps that audit found have since been closed:

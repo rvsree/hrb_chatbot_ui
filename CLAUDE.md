@@ -42,8 +42,8 @@ Every page talks to the backend through exactly one place: `src/api/client.ts` -
 
 ## Docs worth reading before non-trivial changes
 
-- [docs/dev-reference/hrb_chatbot_v3/platform-overview.html](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/architecture/platform-overview.html) *(in the sibling `hrb_chatbot_service` repo - the cross-platform doc tree lives there, not duplicated here)* - the cross-service hub.
-- [hrb-chatbot-ui-current-state-architecture.drawio](../hrb_chatbot_service/docs/dev-reference/hrb_chatbot_v3/architecture/diagrams/hrb-chatbot-ui-current-state-architecture.drawio) - the real page/API-client structure, one diagram.
+- [platform-overview.html](https://github.com/rvsree/hrb_emp_assist/blob/master/docs/architecture/platform-overview.html) *(in the shared `hrb_emp_assist` repo, moved there 2026-10-26 - not duplicated here)* - the cross-service hub.
+- [hrb-chatbot-ui-current-state-architecture.drawio](https://github.com/rvsree/hrb_emp_assist/blob/master/docs/architecture/diagrams/hrb-chatbot-ui-current-state-architecture.drawio) - the real page/API-client structure, one diagram.
 - `ROADMAP.md` - this repo's own phase history, going forward from 2026-10-25.
 
 ## Spec-Driven Development (SDD)
