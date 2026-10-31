@@ -4,6 +4,17 @@ import { ApiRequestError, validateLogin } from "../api/client";
 import { useIdentity } from "../context/IdentityContext";
 import type { Role } from "../types";
 import EyeIcon from "../components/EyeIcon";
+import CopyButton from "../components/CopyButton";
+
+// Phase 18 - one real, documented sample per non-admin role (the same
+// personas already used as this project's own canonical examples
+// throughout its docs) - not the full KNOWN-PERSONAS.md roster, just
+// enough to unblock a visitor who doesn't know what to type.
+const SAMPLE_PERSONAS: Partial<Record<Role, { employeeId: string; fullName: string }>> = {
+  employee: { employeeId: "EMP052", fullName: "Eddy Employee" },
+  manager: { employeeId: "EMP053", fullName: "Mia Manager" },
+  hr_support: { employeeId: "EMP051", fullName: "Hana Support" },
+};
 
 export default function LoginPage() {
   const { login } = useIdentity();
@@ -28,6 +39,7 @@ export default function LoginPage() {
   const isAdminTier = role === "admin" || role === "employee_admin";
   const revealGatedOnSecretCode = isAdminTier;
   const revealAllowed = !revealGatedOnSecretCode || isSecretCodeVerified;
+  const samplePersona = SAMPLE_PERSONAS[role];
 
   function handleSecretCodeChange(value: string) {
     setSecretCode(value);
@@ -102,48 +114,70 @@ export default function LoginPage() {
         <h1>HRB Chatbot</h1>
 
         <label htmlFor="employee-id">Employee ID</label>
-        <div className="input-with-toggle">
+        {isAdminTier ? (
+          <div className="input-with-toggle">
+            <input
+              id="employee-id"
+              type={showEmployeeId ? "text" : "password"}
+              value={employeeId}
+              onChange={(event) => setEmployeeId(event.target.value)}
+              placeholder="E100"
+              required
+            />
+            <button
+              type="button"
+              className="input-toggle-button"
+              onClick={() => setShowEmployeeId((current) => !current)}
+              disabled={!revealAllowed}
+              aria-label={showEmployeeId ? "Hide employee ID" : "Show employee ID"}
+              title={revealAllowed ? (showEmployeeId ? "Hide" : "Show") : "Enter the correct secret code to reveal"}
+            >
+              <EyeIcon open={showEmployeeId} size={16} />
+            </button>
+          </div>
+        ) : (
           <input
             id="employee-id"
-            type={showEmployeeId ? "text" : "password"}
+            type="text"
             value={employeeId}
             onChange={(event) => setEmployeeId(event.target.value)}
             placeholder="E100"
             required
           />
-          <button
-            type="button"
-            className="input-toggle-button"
-            onClick={() => setShowEmployeeId((current) => !current)}
-            disabled={!revealAllowed}
-            aria-label={showEmployeeId ? "Hide employee ID" : "Show employee ID"}
-            title={revealAllowed ? (showEmployeeId ? "Hide" : "Show") : "Enter the correct secret code to reveal"}
-          >
-            <EyeIcon open={showEmployeeId} size={16} />
-          </button>
-        </div>
+        )}
 
         <label htmlFor="full-name">Full name</label>
-        <div className="input-with-toggle">
+        {isAdminTier ? (
+          <div className="input-with-toggle">
+            <input
+              id="full-name"
+              type={showFullName ? "text" : "password"}
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              placeholder="Jane Doe"
+              required
+            />
+            <button
+              type="button"
+              className="input-toggle-button"
+              onClick={() => setShowFullName((current) => !current)}
+              disabled={!revealAllowed}
+              aria-label={showFullName ? "Hide full name" : "Show full name"}
+              title={revealAllowed ? (showFullName ? "Hide" : "Show") : "Enter the correct secret code to reveal"}
+            >
+              <EyeIcon open={showFullName} size={16} />
+            </button>
+          </div>
+        ) : (
           <input
             id="full-name"
-            type={showFullName ? "text" : "password"}
+            type="text"
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
             placeholder="Jane Doe"
             required
           />
-          <button
-            type="button"
-            className="input-toggle-button"
-            onClick={() => setShowFullName((current) => !current)}
-            disabled={!revealAllowed}
-            aria-label={showFullName ? "Hide full name" : "Show full name"}
-            title={revealAllowed ? (showFullName ? "Hide" : "Show") : "Enter the correct secret code to reveal"}
-          >
-            <EyeIcon open={showFullName} size={16} />
-          </button>
-        </div>
+        )}
 
         <label htmlFor="role">Role</label>
         <select id="role" value={role} onChange={(event) => handleRoleChange(event.target.value as Role)}>
@@ -153,6 +187,16 @@ export default function LoginPage() {
           <option value="admin">DevOps</option>
           <option value="employee_admin">Admin</option>
         </select>
+
+        {samplePersona && (
+          <p className="dev-note-inline">
+            Don't have a login? Try{" "}
+            <strong>{samplePersona.employeeId}</strong>{" "}
+            <CopyButton text={samplePersona.employeeId} label="sample employee ID" /> /{" "}
+            <strong>{samplePersona.fullName}</strong>{" "}
+            <CopyButton text={samplePersona.fullName} label="sample full name" />
+          </p>
+        )}
 
         {isAdminTier && (
           <>
