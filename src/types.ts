@@ -707,6 +707,36 @@ export interface GoldenDatasetListResponse {
   cases: GoldenDatasetCaseSummary[];
 }
 
+// Phase 20 (hrb_chatbot_service's own Phase 283) - FinOps cost snapshot.
+// total_cost is null for LangSmith - it reports trace counts in
+// cost_breakdown instead (e.g. {"traces": 1122}), not a dollar figure.
+export type FinopsProvider = "aws" | "langsmith";
+
+export interface FinopsCostSnapshot {
+  provider: string;
+  captured_at: string;
+  period_start: string;
+  period_end: string;
+  total_cost: number | null;
+  cost_breakdown: Record<string, number>;
+}
+
+export interface FinopsHistoryResponse {
+  provider: string;
+  snapshots: FinopsCostSnapshot[];
+}
+
+export interface FinopsOtherServiceEntry {
+  provider: string;
+  display_name: string;
+  billing_model: string;
+  why_no_pause_needed: string;
+}
+
+export interface FinopsOtherServicesResponse {
+  services: FinopsOtherServiceEntry[];
+}
+
 // Phase 1 (hrb_chatbot_service's own Phase 257) - a captured live query,
 // real production traffic whose groundedness score crossed the
 // configurable LTM threshold (or didn't - is_ltm distinguishes the two).
@@ -1054,4 +1084,29 @@ export interface AwsDemoServiceStatus {
 
 export interface AwsDemoStatusResponse {
   services: AwsDemoServiceStatus[];
+}
+
+// Phase 21 (hrb_chatbot_service's own Phase 284) - the public, unauthenticated
+// `/v1/auth/backend-activation/*` routes a visitor hits before login succeeds.
+// Reuses AwsDemoServiceStatus (same per-service shape as the admin-only AWS
+// Demo tab above) but a different top-level shape (all_running, no error-only
+// AwsDemoStatusResponse wrapper), so this is its own interface, not that one.
+export interface BackendActivationStatusResponse {
+  all_running: boolean;
+  services: AwsDemoServiceStatus[];
+}
+
+// Phase 22 (hrb_chatbot_service's own Phase 285) - the Explainability
+// modal's Testing Strategy tab real-sample-data route. One generic shape,
+// reused for all 3 datasets - the real item type is whichever of the 3
+// existing summary interfaces the caller already knows it asked for, via
+// the dataset argument (same reasoning TestingStrategyDataset documents).
+export type TestingStrategyDataset = "golden" | "synthetic" | "live-queries";
+
+export interface TestingStrategySampleResponse<
+  T = GoldenDatasetCaseSummary | SyntheticDatasetCaseSummary | LiveQuerySummary,
+> {
+  dataset: string;
+  total_count: number;
+  sample: T[];
 }

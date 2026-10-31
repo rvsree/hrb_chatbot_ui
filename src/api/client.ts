@@ -14,6 +14,7 @@ import type {
   AgenticRagResponse,
   AppSettingResponse,
   AwsDemoStatusResponse,
+  BackendActivationStatusResponse,
   ConversationDetailResponse,
   ConversationListResponse,
   DocumentListResponse,
@@ -29,6 +30,10 @@ import type {
   EvalRunListResponse,
   FaqSubmissionListResponse,
   FaqSubmissionRecord,
+  FinopsCostSnapshot,
+  FinopsHistoryResponse,
+  FinopsOtherServicesResponse,
+  FinopsProvider,
   GenaiRagOptions,
   GrantWaiverResponse,
   RequestMetricsResponse,
@@ -52,6 +57,8 @@ import type {
   ResolveHitlRequestResponse,
   SyntheticDatasetCaseSummary,
   SyntheticDatasetListResponse,
+  TestingStrategyDataset,
+  TestingStrategySampleResponse,
   UnpaidLeaveRequestResponse,
   UserProfile,
 } from "../types";
@@ -933,6 +940,61 @@ export async function listGoldenDataset(
   return (await response.json()) as GoldenDatasetListResponse;
 }
 
+// Phase 20 (hrb_chatbot_service's own Phase 283) - latest FinOps cost
+// snapshot for one provider. AWS can 404/503 with FINOPS_PROVIDER_UNAVAILABLE
+// until the Cost Explorer IAM policy is attached - callers check `.code`.
+export async function getFinopsCost(
+  userProfile: UserProfile,
+  provider: FinopsProvider,
+  forceRefresh?: boolean,
+): Promise<FinopsCostSnapshot> {
+  const params = withForceRefresh(
+    new URLSearchParams({
+      employee_id: userProfile.employee_id,
+      full_name: userProfile.full_name,
+      role: userProfile.role,
+    }),
+    forceRefresh,
+  );
+  const response = await fetch(`${API_BASE_URL}/v1/admin/finops/${provider}/cost?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FinopsCostSnapshot;
+}
+
+// Phase 20 - up to 30 past snapshots for one provider, newest first.
+export async function getFinopsHistory(userProfile: UserProfile, provider: FinopsProvider): Promise<FinopsHistoryResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/finops/${provider}/history?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FinopsHistoryResponse;
+}
+
+// Phase 20 - static, no live call: Pinecone/Upstash(Redis)/Neon each
+// already bill near-$0 idle, so this just explains why, not a cost call.
+export async function getFinopsOtherServices(userProfile: UserProfile): Promise<FinopsOtherServicesResponse> {
+  const params = new URLSearchParams({
+    employee_id: userProfile.employee_id,
+    full_name: userProfile.full_name,
+    role: userProfile.role,
+  });
+  const response = await fetch(`${API_BASE_URL}/v1/admin/finops/other-services?${params.toString()}`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as FinopsOtherServicesResponse;
+}
+
 // Phase 1 - real production queries captured when their live groundedness
 // score crossed the configurable LTM threshold (or didn't - isLtm filters).
 export async function listLiveQueries(
@@ -1479,4 +1541,43 @@ export async function pauseAwsDemoServices(
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as AwsDemoStatusResponse;
+}
+
+// Phase 21 - hrb_chatbot_service's own Phase 284 routes. Public and
+// unauthenticated on purpose (a visitor hits these before login succeeds),
+// so unlike every other admin-adjacent call here, no user_profile/query
+// params are sent.
+export async function getBackendActivationStatus(): Promise<BackendActivationStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/auth/backend-activation/status`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as BackendActivationStatusResponse;
+}
+
+export async function resumeBackendActivation(): Promise<BackendActivationStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/v1/auth/backend-activation/resume`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as BackendActivationStatusResponse;
+}
+
+// Phase 22 (hrb_chatbot_service's own Phase 285) - Explainability modal's
+// Testing Strategy tab, up to 10 real sample rows per dataset. Public and
+// unauthenticated, same as getBackendActivationStatus() above - no
+// employee_id/full_name/role params, unlike most other calls in this file.
+export async function getTestingStrategySample<T>(dataset: TestingStrategyDataset): Promise<TestingStrategySampleResponse<T>> {
+  const response = await fetch(`${API_BASE_URL}/v1/explainability/testing-strategy/${dataset}/sample`);
+
+  if (!response.ok) {
+    await parseErrorAndThrow(response);
+  }
+  return (await response.json()) as TestingStrategySampleResponse<T>;
 }

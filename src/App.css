@@ -255,6 +255,21 @@ textarea:focus {
   width: 100%;
 }
 
+/* Phase 21 - the persistent "Need sample login credentials?" link below
+   Sign in. .login-card button's own width:100% still applies (fine, it's
+   the full-width convention every other button in this card already
+   uses) - this just overrides the margin and centers the text itself,
+   so it reads as a link, not another full button. Scoped under
+   .login-card for specificity over .login-card button's own margin-top,
+   without resorting to !important. */
+.login-card .login-sample-credentials-link {
+  /* Phase 21 (2nd correction) - user-requested 2 blank lines of space
+     above this link, separating it clearly from the Sign in button. */
+  margin-top: 3em;
+  text-align: center;
+  justify-content: center;
+}
+
 .input-with-toggle {
   position: relative;
 }
@@ -290,27 +305,6 @@ textarea:focus {
   border-radius: var(--radius-sm);
   padding: 9px 12px;
   margin: 10px 0;
-}
-
-/* Login page's sample-persona hint (Phase 18/19) - each row keeps its
-   value and copy button on one line via flex, instead of the plain-text
-   wrapping that could isolate a copy icon on its own line. */
-.login-assistance {
-  margin: 14px 0 6px;
-}
-
-.login-sample-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.login-assistance-link {
-  display: block;
-  margin-top: 10px;
-  font-size: 12px;
 }
 
 .chat-layout {
@@ -816,6 +810,21 @@ button.conversation-item:hover {
 }
 
 .message-user .link-button:hover:not(:disabled) {
+  color: var(--accent-contrast);
+}
+
+/* User-reported, 2026-10-31: the Copy icon on a user's own message was
+   effectively invisible - .link-button.icon-button hardcodes
+   color: var(--accent), but .message-user's own background IS
+   var(--accent), so the icon rendered the same color as what's behind it.
+   3-class selector here beats both 2-class rules above on specificity
+   alone, regardless of source order, so this always wins inside a user
+   bubble specifically. */
+.message-user .link-button.icon-button {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.message-user .link-button.icon-button:hover:not(:disabled) {
   color: var(--accent-contrast);
 }
 

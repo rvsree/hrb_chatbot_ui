@@ -1,10 +1,19 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ApiRequestError, validateLogin } from "../api/client";
+import { ApiRequestError, getBackendActivationStatus, validateLogin } from "../api/client";
 import { useIdentity } from "../context/IdentityContext";
-import type { Role } from "../types";
+import type { Role, UserProfile } from "../types";
 import EyeIcon from "../components/EyeIcon";
 import CopyButton from "../components/CopyButton";
+import HelpPopover from "../components/HelpPopover";
+import AwsActivationWait from "../components/AwsActivationWait";
+
+// Phase 282 - matches the backend's own Pydantic `pattern` constraint
+// (models/common.py/auth.py) exactly - this is a UX nicety (fail fast,
+// clear native browser message), not the real security boundary, which
+// stays server-side (login.py's known-personas allowlist).
+const EMPLOYEE_ID_PATTERN = "[A-Za-z0-9]+";
+const EMP_NAME_PATTERN = "[A-Za-z\\s'\\-]+";
 
 // Phase 18 - one real, documented sample per non-admin role (the same
 // personas already used as this project's own canonical examples
@@ -14,6 +23,21 @@ const SAMPLE_PERSONAS: Partial<Record<Role, { employeeId: string; fullName: stri
   employee: { employeeId: "EMP052", fullName: "Eddy Employee" },
   manager: { employeeId: "EMP053", fullName: "Mia Manager" },
   hr_support: { employeeId: "EMP051", fullName: "Hana Support" },
+};
+
+// Phase 21 - derived from SAMPLE_PERSONAS above (not a second hand-written
+// copy of the same 3 personas), in the same order the Role <select>'s own
+// options list them, for the "Sample login" popup to map over.
+const ALL_SAMPLE_PERSONAS = (["employee", "manager", "hr_support"] as const).map((sampleRole) => ({
+  role: sampleRole,
+  ...SAMPLE_PERSONAS[sampleRole]!,
+}));
+
+// Matches the Role <select>'s own option text for these 3 roles.
+const SAMPLE_PERSONA_LABELS: Record<"employee" | "manager" | "hr_support", string> = {
+  employee: "Employee",
+  manager: "Manager",
+  hr_support: "HR Support",
 };
 
 export default function LoginPage() {
@@ -39,7 +63,15 @@ export default function LoginPage() {
   const isAdminTier = role === "admin" || role === "employee_admin";
   const revealGatedOnSecretCode = isAdminTier;
   const revealAllowed = !revealGatedOnSecretCode || isSecretCodeVerified;
-  const samplePersona = SAMPLE_PERSONAS[role];
+  // Phase 21 - set only once validateLogin() succeeds and the backend
+  // reports all_running: false. While this is non-null, the form itself
+  // is replaced by AwsActivationWait; proceedToApp() is what that
+  // component calls once activation finishes (or the visitor overrides it).
+  const [pendingLoginResult, setPendingLoginResult] = useState<{
+    userProfile: UserProfile;
+    mustResetSecretCode: boolean;
+  } | null>(null);
+  const [awsWaitActive, setAwsWaitActive] = useState(false);
 
   function handleSecretCodeChange(value: string) {
     setSecretCode(value);
@@ -81,6 +113,14 @@ export default function LoginPage() {
     }
   }
 
+  // Phase 21 - the actual login()/navigate() pair, split out of
+  // handleSubmit so both the immediate "already running" path and
+  // AwsActivationWait's own onProceed can call it.
+  function proceedToApp(userProfile: UserProfile, mustResetSecretCode: boolean) {
+    login(userProfile);
+    navigate(mustResetSecretCode ? "/admin/reset-secret-code" : "/chat");
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!employeeId.trim() || !fullName.trim() || isValidating) {
@@ -95,8 +135,31 @@ export default function LoginPage() {
       // the frontend is the only accurate source. Captured once here,
       // stored with the rest of the identity.
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      login({ ...result.userProfile, timezone });
-      navigate(result.mustResetSecretCode ? "/admin/reset-secret-code" : "/chat");
+      const userProfile = { ...result.userProfile, timezone };
+
+      // Phase 21 - hrb_chatbot_service Phase 284: in local dev this always
+      // resolves to all_running: true immediately (the backend no-ops
+      // outside production), so this path is a no-op there. In production,
+      // a paused AWS Demo environment (Phase 261) needs a visitor-facing
+      // way back in - AwsActivationWait owns the resume/poll/timeout cycle.
+      let allRunning = true;
+      try {
+        const activationStatus = await getBackendActivationStatus();
+        allRunning = activationStatus.all_running;
+      } catch {
+        // An unknown activation state is treated the same as "not running
+        // yet" - AwsActivationWait's own resume+poll+timeout cycle handles
+        // a flaky activation check too, rather than silently proceeding
+        // into a backend that might still be asleep.
+        allRunning = false;
+      }
+
+      if (allRunning) {
+        proceedToApp(userProfile, result.mustResetSecretCode);
+      } else {
+        setPendingLoginResult({ userProfile, mustResetSecretCode: result.mustResetSecretCode });
+        setAwsWaitActive(true);
+      }
     } catch (error) {
       if (error instanceof ApiRequestError) {
         setLoginError(error.message);
@@ -108,12 +171,24 @@ export default function LoginPage() {
     }
   }
 
+  // Phase 21 - once a successful login's own backend-activation check comes
+  // back false, the form itself is replaced by the wait screen - the
+  // same reasoning as this file's other full-content swaps (isAdminTier),
+  // just gated on this new state instead.
+  if (awsWaitActive && pendingLoginResult) {
+    return (
+      <AwsActivationWait
+        onProceed={() => proceedToApp(pendingLoginResult.userProfile, pendingLoginResult.mustResetSecretCode)}
+      />
+    );
+  }
+
   return (
     <div className="centered-page">
       <form className="card login-card" onSubmit={handleSubmit}>
         <h1>HRB Chatbot</h1>
 
-        <label htmlFor="employee-id">Employee ID</label>
+        <label htmlFor="employee-id">Emp ID</label>
         {isAdminTier ? (
           <div className="input-with-toggle">
             <input
@@ -142,11 +217,13 @@ export default function LoginPage() {
             value={employeeId}
             onChange={(event) => setEmployeeId(event.target.value)}
             placeholder="E100"
+            pattern={EMPLOYEE_ID_PATTERN}
+            title="Letters and numbers only"
             required
           />
         )}
 
-        <label htmlFor="full-name">Full name</label>
+        <label htmlFor="full-name">Emp Name</label>
         {isAdminTier ? (
           <div className="input-with-toggle">
             <input
@@ -175,6 +252,8 @@ export default function LoginPage() {
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
             placeholder="Jane Doe"
+            pattern={EMP_NAME_PATTERN}
+            title="Letters, spaces, hyphens, and apostrophes only"
             required
           />
         )}
@@ -187,36 +266,6 @@ export default function LoginPage() {
           <option value="admin">DevOps</option>
           <option value="employee_admin">Admin</option>
         </select>
-
-        {samplePersona && (
-          <div className="dev-note login-assistance">
-            <strong>Login Assistance</strong> — try these credentials:
-            <div className="login-sample-row">
-              <span>Employee ID: <strong>{samplePersona.employeeId}</strong></span>
-              <CopyButton
-                text={samplePersona.employeeId}
-                label="sample employee ID"
-                onCopied={() => setEmployeeId(samplePersona.employeeId)}
-              />
-            </div>
-            <div className="login-sample-row">
-              <span>Full name: <strong>{samplePersona.fullName}</strong></span>
-              <CopyButton
-                text={samplePersona.fullName}
-                label="sample full name"
-                onCopied={() => setFullName(samplePersona.fullName)}
-              />
-            </div>
-            <a
-              className="login-assistance-link"
-              href="https://github.com/rvsree/hrb_chatbot_ui/blob/master/VISITOR-GUIDE.md"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              More sample logins →
-            </a>
-          </div>
-        )}
 
         {isAdminTier && (
           <>
@@ -253,6 +302,38 @@ export default function LoginPage() {
         <button type="submit" disabled={isValidating}>
           {isValidating ? "Signing in..." : "Sign in"}
         </button>
+        {/* Phase 21 (2nd correction) - the persistent link IS this
+            popover's own trigger now (no separate "?" icon anywhere on
+            the form), lists all 3 non-admin personas together (Employee
+            -> Manager -> HR Support, matching the <select>'s own option
+            order), each with its own copy icon that also switches Role
+            to match. */}
+        <HelpPopover label="Sample login" triggerContent="Need sample login credentials?" triggerClassName="link-button login-sample-credentials-link">
+          {ALL_SAMPLE_PERSONAS.map((persona) => (
+            <p key={persona.role}>
+              <strong>{SAMPLE_PERSONA_LABELS[persona.role]}</strong> - Employee ID: <strong>{persona.employeeId}</strong>,
+              Emp Name: <strong>{persona.fullName}</strong>{" "}
+              <CopyButton
+                text={`${persona.employeeId} / ${persona.fullName}`}
+                label={`${SAMPLE_PERSONA_LABELS[persona.role]} sample identity`}
+                onCopied={() => {
+                  setEmployeeId(persona.employeeId);
+                  setFullName(persona.fullName);
+                  handleRoleChange(persona.role);
+                }}
+              />
+            </p>
+          ))}
+          <p>
+            <a
+              href="https://github.com/rvsree/hrb_emp_assist/blob/master/README.md#new-here-trying-the-live-demo"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Project documentation →
+            </a>
+          </p>
+        </HelpPopover>
       </form>
     </div>
   );

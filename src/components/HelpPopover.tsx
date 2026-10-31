@@ -43,9 +43,15 @@ interface HelpPopoverProps {
   // "muted" matches the old info-icon-unimplemented look (a stub feature,
   // e.g. sql_db_agent) - visually distinct from a real, working one.
   variant?: "default" | "muted";
+  // Phase 21 (2nd correction) - LoginPage's "Need sample login credentials?"
+  // link is this popover's own trigger button, not a separate element that
+  // opens it by ref - lets the trigger read as a real link instead of a "?".
+  // Defaults to "?" for every other call site, unchanged.
+  triggerContent?: ReactNode;
+  triggerClassName?: string;
 }
 
-export default function HelpPopover({ label, children, variant = "default" }: HelpPopoverProps) {
+export default function HelpPopover({ label, children, variant = "default", triggerContent, triggerClassName }: HelpPopoverProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{
@@ -182,12 +188,14 @@ export default function HelpPopover({ label, children, variant = "default" }: He
       <button
         ref={buttonRef}
         type="button"
-        className={variant === "muted" ? "help-popover-trigger help-popover-trigger-muted" : "help-popover-trigger"}
+        className={
+          triggerClassName ?? (variant === "muted" ? "help-popover-trigger help-popover-trigger-muted" : "help-popover-trigger")
+        }
         aria-label={label}
         aria-expanded={isOpen}
         onClick={() => (isOpen ? closePopover() : openPopover())}
       >
-        ?
+        {triggerContent ?? "?"}
       </button>
       {isOpen &&
         position &&

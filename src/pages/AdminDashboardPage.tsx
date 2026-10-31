@@ -34,6 +34,7 @@ import CopyButton from "../components/CopyButton";
 import AdminFeedbackModal from "../components/AdminFeedbackModal";
 import AwsDemoPanel from "../components/AwsDemoPanel";
 import ConfirmModal from "../components/ConfirmModal";
+import FinopsPanel from "../components/FinopsPanel";
 import HelpPopover from "../components/HelpPopover";
 import InterviewQaCardView from "../components/InterviewQaCardView";
 import InterviewQaEditorModal from "../components/InterviewQaEditorModal";
@@ -80,6 +81,7 @@ type AdminTab =
   | "ci-status"
   | "live-metrics"
   | "aws-demo"
+  | "finops"
   | "interview-qa";
 
 // "documents"/"upload" render the real DocumentsPage/UploadPage components
@@ -103,6 +105,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   "ci-status": "CI/CD Pipeline",
   "live-metrics": "Live Metrics",
   "aws-demo": "AWS Demo",
+  finops: "FinOps Monitoring",
   "interview-qa": "Interview Q&A",
 };
 
@@ -159,7 +162,7 @@ const CATEGORY_TABS: Record<AdminCategory, AdminTab[]> = {
   // entirely, into the main chat UI's own Settings modal (ChatPage.tsx) -
   // user-directed; it was never really Build & Deployment content, and a
   // single-tab category just for it was itself a Phase 4 stopgap.
-  "build-deploy": ["ci-status", "eval-runs", "live-metrics", "aws-demo", "demo-visitors"],
+  "build-deploy": ["ci-status", "eval-runs", "live-metrics", "aws-demo", "demo-visitors", "finops"],
   // Phase 1 - live-queries/synthetic-dataset join golden-dataset here for
   // the same reason it's here: reference/dataset content, not pipeline
   // execution history (the category's own label is a pre-existing naming
@@ -193,7 +196,9 @@ const BUILD_DEPLOY_CLUSTER_LABELS: Record<BuildDeployCluster, string> = {
 
 const BUILD_DEPLOY_CLUSTERS: Record<BuildDeployCluster, AdminTab[]> = {
   "pipeline-observability": ["ci-status", "eval-runs", "live-metrics"],
-  "demo-management": ["aws-demo", "demo-visitors"],
+  // Phase 20 - FinOps Monitoring (AWS/LangSmith cost, other-services note)
+  // joins aws-demo/demo-visitors here: same cost/billing-adjacent concern.
+  "demo-management": ["aws-demo", "demo-visitors", "finops"],
 };
 
 const BUILD_DEPLOY_CLUSTER_ORDER: BuildDeployCluster[] = ["pipeline-observability", "demo-management"];
@@ -1052,7 +1057,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
     activeTab !== "upload" &&
     activeTab !== "ci-status" &&
     activeTab !== "live-metrics" &&
-    activeTab !== "aws-demo";
+    activeTab !== "aws-demo" &&
+    activeTab !== "finops";
 
   function renderWorkflowStatus(status: WorkflowStatus) {
     return (
@@ -1786,6 +1792,8 @@ export default function AdminDashboardPage({ standaloneCategory }: AdminDashboar
         )}
 
         {!isLoading && activeTab === "aws-demo" && <AwsDemoPanel userProfile={currentIdentity} />}
+
+        {!isLoading && activeTab === "finops" && <FinopsPanel userProfile={currentIdentity} />}
 
         {!isLoading && activeTab === "eval-runs" && (
           <>

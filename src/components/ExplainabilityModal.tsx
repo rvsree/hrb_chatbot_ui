@@ -1,9 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { getDocument } from "../api/client";
+import { getDocument, getTestingStrategySample } from "../api/client";
 import { RESPONSE_METRIC_GUIDANCE, RETRIEVAL_METRIC_GUIDANCE } from "../constants/evalMetricGuidance";
 import { useIdentity } from "../context/IdentityContext";
 import HelpPopover from "./HelpPopover";
-import type { ActivatedRailInfo, ChatMessage, RetrievedChunk, ToolCallInfo } from "../types";
+import type {
+  ActivatedRailInfo,
+  ChatMessage,
+  GoldenDatasetCaseSummary,
+  LiveQuerySummary,
+  RetrievedChunk,
+  SyntheticDatasetCaseSummary,
+  ToolCallInfo,
+} from "../types";
 
 interface ExplainabilityModalProps {
   message: ChatMessage;
@@ -371,8 +379,6 @@ const TECH_STACK_GROUPS: { label: string; items: TechStackItem[] }[] = [
 type ExplainTopTab =
   | "retrieval"
   | "responseGeneration"
-  | "cacheOptimization"
-  | "techStack"
   | "testingStrategy"
   | "platformArchitecture";
 type ExplainRetrievalLeaf = "kbRetrieval" | "citations" | "retrievalScore";
@@ -391,17 +397,14 @@ type ExplainResponseLeaf =
 type ExplainTestingStrategyLeaf = "goldenDataset" | "syntheticDataset" | "liveQueries" | "langsmith";
 // Phase 17 - the platform-wide picture (ingestion depth + real production
 // incidents), condensed from this session's own RAG Ingestion doc set and
-// RAG-ROADMAP.md's Phase 278/280 entries.
-type ExplainPlatformArchitectureLeaf = "ragIngestion" | "productionIncidents";
+// RAG-ROADMAP.md's Phase 278/280 entries. User-directed, 2026-10-31:
+// Cache Optimization and Tech Stack moved here from the top-level tab row
+// - both are platform-wide, cross-cutting facts (not specific to a single
+// query's retrieval or generation step), same reasoning Platform
+// Architecture's other 2 leaves already group under.
+type ExplainPlatformArchitectureLeaf = "ragIngestion" | "productionIncidents" | "cacheOptimization" | "techStack";
 
-const EXPLAIN_TOP_ORDER: ExplainTopTab[] = [
-  "retrieval",
-  "responseGeneration",
-  "cacheOptimization",
-  "techStack",
-  "testingStrategy",
-  "platformArchitecture",
-];
+const EXPLAIN_TOP_ORDER: ExplainTopTab[] = ["retrieval", "responseGeneration", "testingStrategy", "platformArchitecture"];
 // Metrics/Guardrails/Engineering Trace are genuinely cross-cutting (not
 // purely retrieval- or generation-specific) - placed under Response
 // Generation rather than split further, since splitting their actual
@@ -409,13 +412,6 @@ const EXPLAIN_TOP_ORDER: ExplainTopTab[] = [
 const EXPLAIN_TOP_LABELS: Record<ExplainTopTab, string> = {
   retrieval: "Retrieval",
   responseGeneration: "Response Generation",
-  // 2026-10-20 - user-requested: its own tab, "Caching" as the first child
-  // sub-tab (room for more optimization techniques - rate limiting,
-  // parallel tool calls - to join as sibling sub-tabs later). Phase 3 -
-  // renamed "Optimization" -> "Cache Optimization" (accurate, not
-  // cosmetic - this tab is 100% cache hit/miss content today).
-  cacheOptimization: "Cache Optimization",
-  techStack: "Tech Stack",
   testingStrategy: "Testing Strategy",
   platformArchitecture: "Platform Architecture",
 };
@@ -436,10 +432,14 @@ const EXPLAIN_TESTING_STRATEGY_LEAF_LABELS: Record<ExplainTestingStrategyLeaf, s
 const EXPLAIN_PLATFORM_ARCHITECTURE_LEAF_ORDER: ExplainPlatformArchitectureLeaf[] = [
   "ragIngestion",
   "productionIncidents",
+  "cacheOptimization",
+  "techStack",
 ];
 const EXPLAIN_PLATFORM_ARCHITECTURE_LEAF_LABELS: Record<ExplainPlatformArchitectureLeaf, string> = {
   ragIngestion: "RAG Ingestion",
   productionIncidents: "Production Incidents",
+  cacheOptimization: "Cache Optimization",
+  techStack: "Tech Stack",
 };
 
 // 2026-10-18 - "Retrieval Strategy" was its own tab rather than a line in
@@ -1027,6 +1027,64 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
   // get a 403, not useful data.
   const [chunkingStrategies, setChunkingStrategies] = useState<Record<string, string>>({});
   const [chunkingFetchStarted, setChunkingFetchStarted] = useState(false);
+
+  // Phase 22 (hrb_chatbot_service's own Phase 285) - Testing Strategy's 3
+  // data-backed leaf panels, each fetched on first view only (same
+  // fetchStarted-guard pattern as chunkingFetchStarted below), not eagerly
+  // for all 3 before the modal even opens.
+  const [goldenSampleRows, setGoldenSampleRows] = useState<GoldenDatasetCaseSummary[]>([]);
+  const [goldenSampleTotal, setGoldenSampleTotal] = useState(0);
+  const [goldenSampleFetchStarted, setGoldenSampleFetchStarted] = useState(false);
+  const [goldenSampleError, setGoldenSampleError] = useState(false);
+
+  const [syntheticSampleRows, setSyntheticSampleRows] = useState<SyntheticDatasetCaseSummary[]>([]);
+  const [syntheticSampleTotal, setSyntheticSampleTotal] = useState(0);
+  const [syntheticSampleFetchStarted, setSyntheticSampleFetchStarted] = useState(false);
+  const [syntheticSampleError, setSyntheticSampleError] = useState(false);
+
+  const [liveQuerySampleRows, setLiveQuerySampleRows] = useState<LiveQuerySummary[]>([]);
+  const [liveQuerySampleTotal, setLiveQuerySampleTotal] = useState(0);
+  const [liveQuerySampleFetchStarted, setLiveQuerySampleFetchStarted] = useState(false);
+  const [liveQuerySampleError, setLiveQuerySampleError] = useState(false);
+
+  useEffect(() => {
+    if (!showingTestingStrategy || activeTestingStrategyLeaf !== "goldenDataset" || goldenSampleFetchStarted) {
+      return;
+    }
+    setGoldenSampleFetchStarted(true);
+    getTestingStrategySample<GoldenDatasetCaseSummary>("golden")
+      .then((response) => {
+        setGoldenSampleRows(response.sample);
+        setGoldenSampleTotal(response.total_count);
+      })
+      .catch(() => setGoldenSampleError(true));
+  }, [showingTestingStrategy, activeTestingStrategyLeaf, goldenSampleFetchStarted]);
+
+  useEffect(() => {
+    if (!showingTestingStrategy || activeTestingStrategyLeaf !== "syntheticDataset" || syntheticSampleFetchStarted) {
+      return;
+    }
+    setSyntheticSampleFetchStarted(true);
+    getTestingStrategySample<SyntheticDatasetCaseSummary>("synthetic")
+      .then((response) => {
+        setSyntheticSampleRows(response.sample);
+        setSyntheticSampleTotal(response.total_count);
+      })
+      .catch(() => setSyntheticSampleError(true));
+  }, [showingTestingStrategy, activeTestingStrategyLeaf, syntheticSampleFetchStarted]);
+
+  useEffect(() => {
+    if (!showingTestingStrategy || activeTestingStrategyLeaf !== "liveQueries" || liveQuerySampleFetchStarted) {
+      return;
+    }
+    setLiveQuerySampleFetchStarted(true);
+    getTestingStrategySample<LiveQuerySummary>("live-queries")
+      .then((response) => {
+        setLiveQuerySampleRows(response.sample);
+        setLiveQuerySampleTotal(response.total_count);
+      })
+      .catch(() => setLiveQuerySampleError(true));
+  }, [showingTestingStrategy, activeTestingStrategyLeaf, liveQuerySampleFetchStarted]);
 
   useEffect(() => {
     if (!showingRetrieval || activeRetrievalLeaf !== "kbRetrieval" || chunkingFetchStarted) {
@@ -2094,7 +2152,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           );
         })()}
 
-        {activeTopTab === "cacheOptimization" && (
+        {showingPlatformArchitecture && activePlatformArchitectureLeaf === "cacheOptimization" && (
           <div className="explainability-tab-panel">
             <div className="tab-strip" style={{ marginBottom: 12 }}>
               <button
@@ -2591,7 +2649,7 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
           </div>
         )}
 
-        {activeTopTab === "techStack" && (
+        {showingPlatformArchitecture && activePlatformArchitectureLeaf === "techStack" && (
           <div className="explainability-tab-panel">
           <p className="dev-note-inline">
             Real versions read from requirements.txt (hrb_chatbot_v2) and package.json (hrb_chatbot_ui) as of
@@ -2725,10 +2783,10 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
             <div className="panel panel-success">
               <span className="panel-eyebrow">What it is</span>
               <p className="dev-note-inline">
-                A human-written set of questions and expected answers, grounded in the real HR benefits PDFs - 29
-                real cases today (<span className="mono">resources/golden_dataset/golden_dataset.json</span>). The
-                only one of this project's 3 test stores whose "correct answer" is actually verified by a person,
-                which is exactly why it's the only one trusted to block a deploy.
+                A human-written set of questions and expected answers, grounded in the real HR benefits PDFs (
+                <span className="mono">resources/golden_dataset/golden_dataset.json</span>) - see the real case
+                count below. The only one of this project's 3 test stores whose "correct answer" is actually
+                verified by a person, which is exactly why it's the only one trusted to block a deploy.
               </p>
             </div>
             <div className="panel panel-info">
@@ -2738,6 +2796,35 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                 through the real pipeline and issues a PASS/REVIEW/BLOCK verdict before a change is allowed to
                 merge. Small by nature (a human has to write and verify every case), high trust by design.
               </p>
+            </div>
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">Real examples</span>
+              <p className="dev-note-inline">
+                Showing {goldenSampleRows.length} of {goldenSampleTotal} real cases.
+              </p>
+              {goldenSampleError && <p className="dev-note-inline">Couldn't load examples right now.</p>}
+              {goldenSampleRows.length > 0 && (
+                <div className="documents-table-scroll admin-dashboard-table-scroll">
+                  <table className="documents-table">
+                    <thead>
+                      <tr>
+                        <th>Case key</th>
+                        <th>Category</th>
+                        <th>Query</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {goldenSampleRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.case_key}</td>
+                          <td>{row.category ?? "-"}</td>
+                          <td>{row.query ?? "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2769,6 +2856,35 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                 feed into each other, gated by the same groundedness threshold used for the LTM gate below.
               </p>
             </div>
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">Real examples</span>
+              <p className="dev-note-inline">
+                Showing {syntheticSampleRows.length} of {syntheticSampleTotal} real cases.
+              </p>
+              {syntheticSampleError && <p className="dev-note-inline">Couldn't load examples right now.</p>}
+              {syntheticSampleRows.length > 0 && (
+                <div className="documents-table-scroll admin-dashboard-table-scroll">
+                  <table className="documents-table">
+                    <thead>
+                      <tr>
+                        <th>Case key</th>
+                        <th>Category</th>
+                        <th>Query</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {syntheticSampleRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.case_key}</td>
+                          <td>{row.category ?? "-"}</td>
+                          <td>{row.query ?? "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -2798,6 +2914,35 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                 that still sounds grounded can still clear the threshold. The score is a proxy for quality, not a
                 guarantee.
               </p>
+            </div>
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">Real examples</span>
+              <p className="dev-note-inline">
+                Showing {liveQuerySampleRows.length} of {liveQuerySampleTotal} real cases.
+              </p>
+              {liveQuerySampleError && <p className="dev-note-inline">Couldn't load examples right now.</p>}
+              {liveQuerySampleRows.length > 0 && (
+                <div className="documents-table-scroll admin-dashboard-table-scroll">
+                  <table className="documents-table">
+                    <thead>
+                      <tr>
+                        <th>Query</th>
+                        <th>Category</th>
+                        <th>Eval score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {liveQuerySampleRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.query_text}</td>
+                          <td>{row.category ?? "-"}</td>
+                          <td>{row.eval_score ?? "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
