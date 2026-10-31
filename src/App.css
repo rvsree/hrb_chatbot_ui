@@ -292,6 +292,27 @@ textarea:focus {
   margin: 10px 0;
 }
 
+/* Login page's sample-persona hint (Phase 18/19) - each row keeps its
+   value and copy button on one line via flex, instead of the plain-text
+   wrapping that could isolate a copy icon on its own line. */
+.login-assistance {
+  margin: 14px 0 6px;
+}
+
+.login-sample-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.login-assistance-link {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
 .chat-layout {
   display: flex;
   height: 100vh;

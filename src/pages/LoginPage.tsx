@@ -15,6 +15,11 @@ const SAMPLE_PERSONAS: Partial<Record<Role, { employeeId: string; fullName: stri
   manager: { employeeId: "EMP053", fullName: "Mia Manager" },
   hr_support: { employeeId: "EMP051", fullName: "Hana Support" },
 };
+const ROLE_LABELS: Partial<Record<Role, string>> = {
+  employee: "an Employee",
+  manager: "a Manager",
+  hr_support: "HR Support",
+};
 
 export default function LoginPage() {
   const { login } = useIdentity();
@@ -189,13 +194,25 @@ export default function LoginPage() {
         </select>
 
         {samplePersona && (
-          <p className="dev-note-inline">
-            Don't have a login? Try{" "}
-            <strong>{samplePersona.employeeId}</strong>{" "}
-            <CopyButton text={samplePersona.employeeId} label="sample employee ID" /> /{" "}
-            <strong>{samplePersona.fullName}</strong>{" "}
-            <CopyButton text={samplePersona.fullName} label="sample full name" />
-          </p>
+          <div className="dev-note login-assistance">
+            <strong>Login Assistance</strong> — don't have a login? Try this sample for {ROLE_LABELS[role]}:
+            <div className="login-sample-row">
+              <span>Employee ID: <strong>{samplePersona.employeeId}</strong></span>
+              <CopyButton text={samplePersona.employeeId} label="sample employee ID" />
+            </div>
+            <div className="login-sample-row">
+              <span>Full name: <strong>{samplePersona.fullName}</strong></span>
+              <CopyButton text={samplePersona.fullName} label="sample full name" />
+            </div>
+            <a
+              className="login-assistance-link"
+              href="https://github.com/rvsree/hrb_chatbot_ui/blob/master/VISITOR-GUIDE.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              More sample logins →
+            </a>
+          </div>
         )}
 
         {isAdminTier && (
