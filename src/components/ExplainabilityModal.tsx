@@ -368,7 +368,13 @@ const TECH_STACK_GROUPS: { label: string; items: TechStackItem[] }[] = [
 // Generation" in a "Retrieval & Response" parent tab that added a click
 // for no real benefit (the parent had no content of its own) - user-
 // reported, removed: those 2 are now top-level tabs directly.
-type ExplainTopTab = "retrieval" | "responseGeneration" | "cacheOptimization" | "techStack";
+type ExplainTopTab =
+  | "retrieval"
+  | "responseGeneration"
+  | "cacheOptimization"
+  | "techStack"
+  | "testingStrategy"
+  | "platformArchitecture";
 type ExplainRetrievalLeaf = "kbRetrieval" | "citations" | "retrievalScore";
 type ExplainResponseLeaf =
   | "agentRouting"
@@ -377,8 +383,25 @@ type ExplainResponseLeaf =
   | "metrics"
   | "guardrails"
   | "engineeringTrace";
+// Phase 17 - user-requested, for professional reviewers: this project's
+// own 3-dataset RAG-quality testing strategy, condensed from
+// hrb_chatbot_service's docs/agent-reference/testing-strategies.md (the
+// authoritative source - every fact here traces back to it or the real
+// code it cites, nothing invented for this tab).
+type ExplainTestingStrategyLeaf = "goldenDataset" | "syntheticDataset" | "liveQueries" | "langsmith";
+// Phase 17 - the platform-wide picture (ingestion depth + real production
+// incidents), condensed from this session's own RAG Ingestion doc set and
+// RAG-ROADMAP.md's Phase 278/280 entries.
+type ExplainPlatformArchitectureLeaf = "ragIngestion" | "productionIncidents";
 
-const EXPLAIN_TOP_ORDER: ExplainTopTab[] = ["retrieval", "responseGeneration", "cacheOptimization", "techStack"];
+const EXPLAIN_TOP_ORDER: ExplainTopTab[] = [
+  "retrieval",
+  "responseGeneration",
+  "cacheOptimization",
+  "techStack",
+  "testingStrategy",
+  "platformArchitecture",
+];
 // Metrics/Guardrails/Engineering Trace are genuinely cross-cutting (not
 // purely retrieval- or generation-specific) - placed under Response
 // Generation rather than split further, since splitting their actual
@@ -393,6 +416,30 @@ const EXPLAIN_TOP_LABELS: Record<ExplainTopTab, string> = {
   // cosmetic - this tab is 100% cache hit/miss content today).
   cacheOptimization: "Cache Optimization",
   techStack: "Tech Stack",
+  testingStrategy: "Testing Strategy",
+  platformArchitecture: "Platform Architecture",
+};
+
+const EXPLAIN_TESTING_STRATEGY_LEAF_ORDER: ExplainTestingStrategyLeaf[] = [
+  "goldenDataset",
+  "syntheticDataset",
+  "liveQueries",
+  "langsmith",
+];
+const EXPLAIN_TESTING_STRATEGY_LEAF_LABELS: Record<ExplainTestingStrategyLeaf, string> = {
+  goldenDataset: "Golden Dataset",
+  syntheticDataset: "Synthetic Dataset",
+  liveQueries: "Live Queries",
+  langsmith: "LangSmith",
+};
+
+const EXPLAIN_PLATFORM_ARCHITECTURE_LEAF_ORDER: ExplainPlatformArchitectureLeaf[] = [
+  "ragIngestion",
+  "productionIncidents",
+];
+const EXPLAIN_PLATFORM_ARCHITECTURE_LEAF_LABELS: Record<ExplainPlatformArchitectureLeaf, string> = {
+  ragIngestion: "RAG Ingestion",
+  productionIncidents: "Production Incidents",
 };
 
 // 2026-10-18 - "Retrieval Strategy" was its own tab rather than a line in
@@ -958,6 +1005,12 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
   const [activeResponseLeaf, setActiveResponseLeaf] = useState<ExplainResponseLeaf>("metrics");
   const showingRetrieval = activeTopTab === "retrieval";
   const showingResponseGeneration = activeTopTab === "responseGeneration";
+  const [activeTestingStrategyLeaf, setActiveTestingStrategyLeaf] =
+    useState<ExplainTestingStrategyLeaf>("goldenDataset");
+  const [activePlatformArchitectureLeaf, setActivePlatformArchitectureLeaf] =
+    useState<ExplainPlatformArchitectureLeaf>("ragIngestion");
+  const showingTestingStrategy = activeTopTab === "testingStrategy";
+  const showingPlatformArchitecture = activeTopTab === "platformArchitecture";
   // Phase 229 round 2 - user-requested: Input/Output Check split into
   // their own sub-tabs instead of always shown side by side, so each
   // one's now-4-column validations table gets the full tab width
@@ -1048,6 +1101,36 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
                   onClick={() => setActiveResponseLeaf(leaf)}
                 >
                   {EXPLAIN_RESPONSE_LEAF_LABELS[leaf]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showingTestingStrategy && (
+            <div className="tab-strip tab-strip-nested">
+              {EXPLAIN_TESTING_STRATEGY_LEAF_ORDER.map((leaf) => (
+                <button
+                  key={leaf}
+                  type="button"
+                  className={activeTestingStrategyLeaf === leaf ? "tab-strip-button-active" : "tab-strip-button"}
+                  onClick={() => setActiveTestingStrategyLeaf(leaf)}
+                >
+                  {EXPLAIN_TESTING_STRATEGY_LEAF_LABELS[leaf]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showingPlatformArchitecture && (
+            <div className="tab-strip tab-strip-nested">
+              {EXPLAIN_PLATFORM_ARCHITECTURE_LEAF_ORDER.map((leaf) => (
+                <button
+                  key={leaf}
+                  type="button"
+                  className={activePlatformArchitectureLeaf === leaf ? "tab-strip-button-active" : "tab-strip-button"}
+                  onClick={() => setActivePlatformArchitectureLeaf(leaf)}
+                >
+                  {EXPLAIN_PLATFORM_ARCHITECTURE_LEAF_LABELS[leaf]}
                 </button>
               ))}
             </div>
@@ -2634,6 +2717,232 @@ export default function ExplainabilityModal(props: ExplainabilityModalProps) {
               </div>
             </div>
           )}
+          </div>
+        )}
+
+        {showingTestingStrategy && activeTestingStrategyLeaf === "goldenDataset" && (
+          <div className="explainability-tab-panel">
+            <div className="panel panel-success">
+              <span className="panel-eyebrow">What it is</span>
+              <p className="dev-note-inline">
+                A human-written set of questions and expected answers, grounded in the real HR benefits PDFs - 29
+                real cases today (<span className="mono">resources/golden_dataset/golden_dataset.json</span>). The
+                only one of this project's 3 test stores whose "correct answer" is actually verified by a person,
+                which is exactly why it's the only one trusted to block a deploy.
+              </p>
+            </div>
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">What it's for</span>
+              <p className="dev-note-inline">
+                The CI release gate - <span className="mono">scripts/run_release_gate.py</span> runs every case
+                through the real pipeline and issues a PASS/REVIEW/BLOCK verdict before a change is allowed to
+                merge. Small by nature (a human has to write and verify every case), high trust by design.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {showingTestingStrategy && activeTestingStrategyLeaf === "syntheticDataset" && (
+          <div className="explainability-tab-panel">
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">What it is</span>
+              <p className="dev-note-inline">
+                Generated programmatically (an LLM given a real KB chunk, asked to produce varied phrasings) rather
+                than hand-written - cheap to grow into the hundreds, but the generated "expected answer" is{" "}
+                <strong>not</strong> human-verified, so it's never trusted the way a Golden Dataset case is.
+              </p>
+            </div>
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">Golden vs. Synthetic - the real trade-off</span>
+              <p className="dev-note-inline">
+                Golden buys trust at the cost of scale; Synthetic buys scale (hundreds of phrasings/edge cases a
+                person wouldn't think to write) at the cost of trust. Neither replaces the other - this project
+                keeps both deliberately, plus a third store (Live Queries) for a third question: what are people
+                actually asking.
+              </p>
+            </div>
+            <div className="panel panel-success">
+              <span className="panel-eyebrow">A real connection between the two</span>
+              <p className="dev-note-inline">
+                The Admin Dashboard's "Promote to Synthetic" action lets a real, well-scoring live query graduate
+                into this store directly - the one place today where these otherwise-separate stores actually
+                feed into each other, gated by the same groundedness threshold used for the LTM gate below.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {showingTestingStrategy && activeTestingStrategyLeaf === "liveQueries" && (
+          <div className="explainability-tab-panel">
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">What it is</span>
+              <p className="dev-note-inline">
+                Real questions from real production traffic, captured and scored by the same live groundedness
+                judge every production answer already gets - the "reality check" the other two stores can't give,
+                since neither Golden nor Synthetic reflects what people are actually asking.
+              </p>
+            </div>
+            <div className="panel panel-success">
+              <span className="panel-eyebrow">The LTM quality gate</span>
+              <p className="dev-note-inline">
+                Only queries scoring above a threshold (today: <strong>0.6</strong>, runtime-editable in Settings -
+                not hardcoded) get promoted to <span className="mono">is_ltm = true</span> - a curated pool of
+                real-world questions the system is already answering well. Decided by{" "}
+                <span className="mono">maybe_capture_live_query()</span> in <span className="mono">eval_threshold.py</span>.
+              </p>
+            </div>
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">The honest limit</span>
+              <p className="dev-note-inline">
+                There's no pre-known "correct answer" here, only a live quality score - a confidently-wrong answer
+                that still sounds grounded can still clear the threshold. The score is a proxy for quality, not a
+                guarantee.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {showingTestingStrategy && activeTestingStrategyLeaf === "langsmith" && (
+          <div className="explainability-tab-panel">
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">What LangSmith actually traces</span>
+              <p className="dev-note-inline">
+                The step-by-step record of one request - every LLM call, its latency, its token usage. A debugging/
+                observability tool, not a dataset of questions and scores.
+              </p>
+            </div>
+            <div className="panel panel-info">
+              <span className="panel-eyebrow">Local vs. production - kept in separate projects</span>
+              <p className="dev-note-inline">
+                <span className="mono">HRB_CHATBOT_LOCAL</span>/<span className="mono">HRB_CHATBOT_PROD</span> pick
+                which LangSmith project a trace lands in (<span className="mono">{"{base}_local"}</span> or{" "}
+                <span className="mono">{"{base}_prod"}</span>) so local dev traffic and real production traffic
+                never land mixed together under the same name.
+              </p>
+            </div>
+            <div className="panel panel-warning">
+              <span className="panel-eyebrow">The common mix-up, worth being precise about</span>
+              <p className="dev-note-inline">
+                LangSmith and the 3 stores on the other tabs here are <strong>two separate systems</strong>, not
+                one. LangSmith captures traces; Golden/Synthetic/Live Queries capture questions and their quality
+                scores, held in this project's own Postgres, viewed through its own Admin Dashboard - not
+                LangSmith's UI. Nothing wires the two together today: a trace you see in LangSmith is not the same
+                row you'd see in the Live Queries tab, even for the same real request.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {showingPlatformArchitecture && (
+          <div className="explainability-tab-panel">
+            <div className="panel panel-info">
+              <a
+                className="link-button"
+                href="https://github.com/rvsree/hrb_emp_assist/blob/master/docs/architecture/platform-overview.html"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open the full architecture hub &rarr;
+              </a>
+              <p className="dev-note-inline">
+                Every business capability, which of this platform's real repos serves it, and one diagram tying it
+                all together - the one-page starting point for the whole system, not just this chat.
+              </p>
+            </div>
+
+            {activePlatformArchitectureLeaf === "ragIngestion" && (
+              <>
+                <div className="panel panel-success">
+                  <span className="panel-eyebrow">Purpose</span>
+                  <p className="dev-note-inline">
+                    Every retrieval mode (GenAI RAG Chat, Single-Agentic RAG, Multi-Agentic RAG) reads from the same
+                    vector index - this pipeline is what writes it: extract PDF text -&gt; chunk -&gt; embed -&gt;
+                    index, one call, synchronously, in-request.
+                  </p>
+                </div>
+                <div className="panel panel-info">
+                  <span className="panel-eyebrow">6 chunking strategies, auto-selected when none is named</span>
+                  <p className="dev-note-inline">
+                    <strong>fixed</strong>, <strong>recursive</strong>, <strong>markdown</strong>,{" "}
+                    <strong>html</strong>, <strong>none</strong> (whole-document), plus explicit-only{" "}
+                    <strong>semantic</strong> and <strong>document_structure</strong>. Auto-selection is a real,
+                    ordered decision (not a guess): markdown heading lines found -&gt; <span className="mono">markdown</span>;
+                    else an HTML heading tag found -&gt; <span className="mono">html</span>; else short enough to
+                    stay whole -&gt; <span className="mono">none</span>; else -&gt; <span className="mono">recursive</span>{" "}
+                    (the default for everything else).
+                  </p>
+                </div>
+                <div className="panel panel-info">
+                  <span className="panel-eyebrow">Dedup and document replacement</span>
+                  <p className="dev-note-inline">
+                    A content-hash match against an existing document short-circuits the whole pipeline - identical
+                    bytes never create a second document. One document replacing another is tracked explicitly
+                    (<span className="mono">supersedes</span>/<span className="mono">is_current</span>), not
+                    inferred.
+                  </p>
+                </div>
+                <div className="panel panel-warning">
+                  <span className="panel-eyebrow">Qdrant - not built yet</span>
+                  <p className="dev-note-inline">
+                    No Qdrant client, gateway entry, or enum value exists anywhere in the current codebase today -
+                    a stated near-term direction, not a shipped feature. Flagged here so this tab never implies
+                    support that doesn't exist yet.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {activePlatformArchitectureLeaf === "productionIncidents" && (
+              <>
+                <div className="panel panel-warning">
+                  <span className="panel-eyebrow">Incident - CI/test runs polluting real production data</span>
+                  <p className="dev-note-inline">
+                    <strong>What broke:</strong> every CI/release-gate run against the golden dataset was writing a
+                    fake row into <span className="mono">live_queries</span> - the table meant for real production
+                    traffic only.
+                  </p>
+                  <p className="dev-note-inline">
+                    <strong>Root cause:</strong> the release gate calls the exact same pipeline functions real
+                    traffic does, with nothing gating the capture step on whether the caller was a real request. A
+                    second, worse source was found while fixing the first: 4 test files never mocked the DB
+                    gateway one shared helper function used, so any test with non-empty fake retrieval results was
+                    silently writing real rows on every local test run too.
+                  </p>
+                  <p className="dev-note-inline">
+                    <strong>How it was caught:</strong> a direct query of the live table, confirmed 746 of 2029 rows
+                    were fake (recognizable by a <span className="mono">NULL employee_id</span> - a value no real
+                    authenticated request can ever produce, since it's a required field).
+                  </p>
+                  <p className="dev-note-inline">
+                    <strong>Fix:</strong> a <span className="mono">capture_as_live_query</span> flag the release
+                    gate explicitly sets to false; the polluted rows deleted after confirming the signature was
+                    safe.
+                  </p>
+                </div>
+                <div className="panel panel-warning">
+                  <span className="panel-eyebrow">Incident - local testing silently poisoned the production cache</span>
+                  <p className="dev-note-inline">
+                    <strong>What broke:</strong> the Admin Dashboard showed a document that 404'd when opened, and
+                    separately showed a real dataset as empty when it wasn't.
+                  </p>
+                  <p className="dev-note-inline">
+                    <strong>Root cause:</strong> local development and production point at the <strong>same</strong>{" "}
+                    shared Redis instance, and a 24h admin-dashboard cache had no separation between the two
+                    environments - routine local testing was writing locally-sourced list data into the exact
+                    cache key production itself read from.
+                  </p>
+                  <p className="dev-note-inline">
+                    <strong>How it was caught:</strong> direct comparison of local and production's own{" "}
+                    <span className="mono">REDIS_URL</span> values, confirmed to resolve to the same host.
+                  </p>
+                  <p className="dev-note-inline">
+                    <strong>Fix:</strong> the cache key prefix is now scoped by environment (the same
+                    local/production split this project's own LangSmith tracing already used), so the two can
+                    never collide again.
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         )}
 
