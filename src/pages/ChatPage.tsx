@@ -22,6 +22,7 @@ import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
 import HelpPopover from "../components/HelpPopover";
 import MessageBubble from "../components/MessageBubble";
+import SampleQueriesModal from "../components/SampleQueriesModal";
 import { SettingField } from "../components/SettingsPanel";
 import UnpaidLeaveModal from "../components/UnpaidLeaveModal";
 import { useIdentity } from "../context/IdentityContext";
@@ -295,6 +296,9 @@ export default function ChatPage() {
   // now, corrected to point at the render site's own up-to-date history
   // instead of repeating the now-false claim.
   const [showUnpaidLeaveModal, setShowUnpaidLeaveModal] = useState(false);
+  // Phase 27 - "Sample queries" link next to the composer, same purpose
+  // as the login page's own "Need sample login credentials?" link.
+  const [showSampleQueriesModal, setShowSampleQueriesModal] = useState(false);
   const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1658,6 +1662,23 @@ export default function ChatPage() {
               rows={2}
               disabled={isSending}
             />
+            {/* Phase 27 - right side of the text box, same row as the
+                other composer icon buttons. Fills the composer with the
+                clicked query and refocuses it - the visitor still hits
+                Send themselves. */}
+            <button
+              type="button"
+              className="composer-icon-button"
+              title="Sample queries - not sure what to ask?"
+              aria-label="Sample queries"
+              onClick={() => setShowSampleQueriesModal(true)}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2 1.8-2 3.3" />
+                <line x1="12" y1="16.5" x2="12" y2="16.6" />
+              </svg>
+            </button>
             {/* Phase 140/141: ad-hoc document chat only ever wires to GenAI
                 RAG mode - hide the control entirely rather than let a user
                 attach a file while a mode that can't use it is selected.
@@ -1686,6 +1707,18 @@ export default function ChatPage() {
       </div>
 
       {showUnpaidLeaveModal && <UnpaidLeaveModal onClose={() => setShowUnpaidLeaveModal(false)} />}
+
+      {showSampleQueriesModal && (
+        <SampleQueriesModal
+          onClose={() => setShowSampleQueriesModal(false)}
+          onSelect={(query) => {
+            setDraft(query);
+            // Deferred one tick - the modal is still closing/unmounting
+            // in this same event, so focus must wait for that to settle.
+            setTimeout(() => textareaRef.current?.focus(), 0);
+          }}
+        />
+      )}
 
       {feedbackTarget && <FeedbackModal onClose={() => setFeedbackTarget(null)} onSubmit={applyFeedback} />}
 

@@ -3159,3 +3159,55 @@ table.iqa-kw-table tr:last-child td {
 .iqa-list-row input {
   flex: 1;
 }
+
+/* Phase 27 - "Sample queries" modal, composer trigger. .modal-card-wide
+   is a modifier on the existing .modal-card base (same overlay/close/
+   actions shape as FeedbackModal/UnpaidLeaveModal), not a new modal type -
+   just wider, since 15 queries across several categories read as
+   cramped at the default 480px. */
+.modal-card-wide {
+  max-width: 640px;
+}
+.sample-queries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sample-queries-category h3 {
+  margin: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.sample-queries-category:first-child h3 {
+  margin-top: 4px;
+}
+.sample-queries-turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sample-queries-turns li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.sample-queries-turn-label {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sample-queries-text {
+  flex: 1;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
