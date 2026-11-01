@@ -1045,6 +1045,21 @@ button.conversation-item:hover {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* Phase 28 - Request Leave (a button + its own "?" HelpPopover) and the
+   Sample Queries text link both sit outside .composer-row's gold-bordered
+   box, at the two opposite ends of the overall .composer flex row - this
+   is the shared alignment rule for both. On the Request Leave wrapper
+   (a div with 2 children) it also lays those children out in a row; on
+   the Sample Queries link (a single <button>, no children to lay out)
+   the display/align/gap rules are simply inert. */
+.composer-side-control {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+}
+
 /* 2026-10-30 - "Enable GenAI Chat Workflow" checkbox, moved here from
    Settings -> RAG Search (user-directed, 3rd round) - a real framed box of
    its own to the left of .composer-row's gold-bordered box, not an
