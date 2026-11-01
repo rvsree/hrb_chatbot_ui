@@ -2,21 +2,19 @@ import CopyButton from "./CopyButton";
 
 // Phase 30 - "Chatbot Features" link, right below "Sample queries" -
 // same purpose (help a visitor understand what they're looking at) but
-// as an intro/overview instead of clickable examples. Same modal shell
-// and section formatting as SampleQueriesModal (.modal-card-wide,
-// .modal-section/.modal-section-list).
+// as an intro/overview instead of clickable examples.
 //
-// Phase 31 - rewritten around real user-journey capabilities rather than
-// a flat feature list: every capability a visitor can actually click or
-// type into is paired with a "Try" query (same CopyButton-into-composer
-// pattern as SampleQueriesModal) or a plain "Try it" hint when the
-// capability isn't a typed question (Request Leave, attaching a file,
-// Explainability, document upload), plus a "Learn more" link to the real
-// README section documenting it - no invented docs, same repos/anchors
-// LoginPage.tsx's own "Project documentation" link already uses.
-// Deliberately dropped: the cold-start/infra-pause note and the
-// mode-dependent-routing note from the old limitations list - both are
-// backend/ops detail, not something a visitor is here to learn about.
+// Phase 33 - rewritten as a proper product overview, not a literal
+// transcript of the original ask: "What is this?"/"What it can do" read
+// as the request's own words pasted back, not drafted copy, so section
+// names are now Overview/Key Capabilities/Getting Started/Good to Know,
+// each its own framed card (.feature-section-card) with real spacing
+// between them, instead of a flat, tightly-packed paragraph list. Wider
+// shell (.modal-card-xwide, this component only - SampleQueriesModal
+// keeps .modal-card-wide, unchanged) gives the capability cards room to
+// breathe. "Why this was built" folded into Overview (2 short paragraphs,
+// not a separate section); "Give it a try" is now a one-line closing
+// callout, not a 6th titled section competing with the 4 real ones.
 interface CoreCapability {
   title: string;
   text: string;
@@ -29,24 +27,27 @@ interface CoreCapability {
 interface FeaturesSection {
   title: string;
   paragraphs: string[];
+  learnMoreHref?: string;
 }
 
 const PLATFORM_README = "https://github.com/rvsree/hrb_emp_assist/blob/master/README.md";
 const CHATBOT_README = "https://github.com/rvsree/hrb_chatbot_service/blob/master/README.md";
 
-const INTRO_SECTION: FeaturesSection = {
-  title: "What is this?",
+const OVERVIEW_SECTION: FeaturesSection = {
+  title: "Overview",
   paragraphs: [
-    "This is an HR benefits assistant for Amazing Bank employees. Instead of digging through PDFs or waiting on an email reply, you can just ask it a question in plain English - about your 401(k), health plan, PTO, tuition assistance, disability coverage, or leave policies - and get a straight answer, right away.",
+    "Amazing Bank's AI-powered HR assistant - ask about your 401(k), health plan, PTO, tuition assistance, disability coverage, or leave policy in plain English, and get a straight answer immediately, grounded in the company's real benefits documents, not guessed or invented.",
+    "Built end-to-end with modern retrieval-augmented generation (RAG) and AI agents, as a hands-on demonstration of how AI can make an organization's own knowledge instantly accessible to its people, instead of sitting locked in documents nobody reads.",
   ],
+  learnMoreHref: `${PLATFORM_README}#what-this-platform-actually-does`,
 };
 
 // Each of these is something a visitor logged in here can actually go do,
 // in roughly the order they'd naturally meet them in a conversation.
 const CORE_CAPABILITIES: CoreCapability[] = [
   {
-    title: "Ask a policy question (RAG retrieval)",
-    text: "Ask a real policy question and get an answer grounded in Amazing Bank's actual benefits documents - retrieved from the knowledge base, not guessed or made up.",
+    title: "Ask a policy question",
+    text: "Get an answer grounded in Amazing Bank's actual benefits documents, retrieved from the knowledge base in real time - not guessed or made up.",
     tryQuery: "What percentage does Amazing Bank match on my 401(k) contributions?",
     learnMoreHref: `${CHATBOT_README}#what-this-repo-demonstrates`,
   },
@@ -70,8 +71,8 @@ const CORE_CAPABILITIES: CoreCapability[] = [
     learnMoreHref: `${CHATBOT_README}#what-this-repo-demonstrates`,
   },
   {
-    title: "Request unpaid leave (a real person decides)",
-    text: "Need an unpaid leave request actually approved, not just answered? The chatbot hands it off to a real HR Support identity, who reviews and resolves it - you're emailed the outcome, and the conversation picks back up where it left off.",
+    title: "Request unpaid leave - reviewed by a real person",
+    text: "The chatbot hands this off to a real HR Support identity, who reviews and resolves it - you're emailed the outcome, and the conversation picks back up where it left off.",
     tryHint: "Try it: click \"Request Leave\" to the left of the message box.",
     learnMoreHref: `${CHATBOT_README}#leave-requests-human-in-the-loop-approval`,
   },
@@ -81,74 +82,75 @@ const CORE_CAPABILITIES: CoreCapability[] = [
     tryHint: "Try it: attach a document with the paperclip icon, then ask \"Summarize this document.\"",
   },
   {
-    title: "See why it answered that way (Explainability)",
+    title: "See why it answered that way",
     text: "Every response carries an \"Explainability\" link - the groundedness score, the exact prompt sent to the AI, a timing breakdown, and whether the answer came from cache, not a black box.",
     tryHint: "Try it: ask any question, then click \"Explainability\" under the response.",
     learnMoreHref: `${CHATBOT_README}#explainability--what-every-query-response-actually-carries`,
   },
   {
-    title: "Grow the knowledge base (RAG ingestion)",
+    title: "Grow the knowledge base",
     text: "Every document the chatbot answers from got here the same way: extract the text, split it into chunks, embed, and index - available to the HR Support role.",
     tryHint: "Try it: log in as the sample HR Support persona, upload a PDF under Documents, then come back and ask about what you just added.",
     learnMoreHref: `${CHATBOT_README}#upload-documents-index-them-and-ask-the-knowledge-base`,
   },
 ];
 
-const HOW_TO_USE_SECTION: FeaturesSection = {
-  title: "How to use it",
+const GETTING_STARTED_SECTION: FeaturesSection = {
+  title: "Getting Started",
   paragraphs: [
     "Just type your question like you'd ask a coworker - there's no special format or command to learn.",
     "Not sure what to ask? Click \"Sample queries\" above for more real examples, including multi-step follow-up conversations.",
-    "You can keep the conversation going, switch topics, or start a brand new conversation any time with \"+ New conversation.\"",
+    "Keep the conversation going, switch topics, or start a brand new conversation any time with \"+ New conversation.\"",
     "Saw an answer that felt off? Use the thumbs up/down under any response - that feedback is tracked and reviewed, not ignored.",
   ],
 };
 
-const WHY_BUILT_SECTION: FeaturesSection = {
-  title: "Why this was built",
-  paragraphs: [
-    "This project exists to show how modern AI - specifically \"RAG\" (retrieval-augmented generation) and AI agents that can take actions, not just answer questions - can make a company's own internal knowledge instantly accessible to employees, instead of sitting locked in documents nobody reads.",
-    "It was built hands-on as a learning project, applying real retrieval, conversation-memory, and multi-agent-routing techniques end to end - not just a chat wrapper around a generic AI model.",
-  ],
-};
-
-const LIMITATIONS_SECTION: FeaturesSection = {
-  title: "Good to know (limitations)",
+const GOOD_TO_KNOW_SECTION: FeaturesSection = {
+  title: "Good to Know",
   paragraphs: [
     "\"Amazing Bank\" is a fictional company built for this project - nothing here reflects a real employer's actual policies.",
     "Like any AI system, it can occasionally get something wrong or incomplete. For anything that actually matters, double-check with a real HR contact.",
   ],
 };
 
-const CLOSING_SECTION: FeaturesSection = {
-  title: "Give it a try",
-  paragraphs: [
-    "The best way to understand what this can do is to just start asking. Try a simple policy question first, then a follow-up, then something about your own leave balance - see how it handles each one.",
-  ],
-};
+const CLOSING_LINE =
+  "Ready to explore? Start with a simple policy question, then try a follow-up, then ask about your own leave balance.";
 
 interface ChatbotFeaturesModalProps {
   onClose: () => void;
   onSelect: (query: string) => void;
 }
 
+function renderSection(section: FeaturesSection) {
+  return (
+    <div key={section.title} className="feature-section-card">
+      <h3>{section.title}</h3>
+      {section.paragraphs.map((paragraph, index) => (
+        <p key={index}>{paragraph}</p>
+      ))}
+      {section.learnMoreHref && (
+        <p>
+          <a href={section.learnMoreHref} target="_blank" rel="noopener noreferrer">
+            Learn more →
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ChatbotFeaturesModal({ onClose, onSelect }: ChatbotFeaturesModalProps) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card modal-card-wide" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-card modal-card-xwide" onClick={(event) => event.stopPropagation()}>
         <h2>Chatbot Features</h2>
-        <p className="dev-note">A quick overview of what this HR assistant can do, how to use it, and what to keep in mind.</p>
+        <p className="dev-note">A closer look at what this AI assistant can do, how to get the most out of it, and what to keep in mind.</p>
 
-        <div className="modal-section-list">
-          <div className="modal-section">
-            <h3>{INTRO_SECTION.title}</h3>
-            {INTRO_SECTION.paragraphs.map((paragraph, index) => (
-              <p key={index}>{paragraph}</p>
-            ))}
-          </div>
+        <div className="feature-sections">
+          {renderSection(OVERVIEW_SECTION)}
 
-          <div className="modal-section">
-            <h3>What it can do</h3>
+          <div className="feature-section-card">
+            <h3>Key Capabilities</h3>
             {CORE_CAPABILITIES.map((capability) => (
               <div key={capability.title} className="feature-capability">
                 <p className="feature-capability-title">{capability.title}</p>
@@ -182,15 +184,11 @@ export default function ChatbotFeaturesModal({ onClose, onSelect }: ChatbotFeatu
             ))}
           </div>
 
-          {[HOW_TO_USE_SECTION, WHY_BUILT_SECTION, LIMITATIONS_SECTION, CLOSING_SECTION].map((section) => (
-            <div key={section.title} className="modal-section">
-              <h3>{section.title}</h3>
-              {section.paragraphs.map((paragraph, index) => (
-                <p key={index}>{paragraph}</p>
-              ))}
-            </div>
-          ))}
+          {renderSection(GETTING_STARTED_SECTION)}
+          {renderSection(GOOD_TO_KNOW_SECTION)}
         </div>
+
+        <p className="feature-cta">{CLOSING_LINE}</p>
 
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={onClose}>

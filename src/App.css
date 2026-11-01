@@ -1242,13 +1242,14 @@ button.conversation-item:hover {
   background: transparent;
   resize: none;
   padding: 8px 0;
-  /* User-directed - 2 rows taller (4 vs 2) and grows further on its own
-     (see the [draft] effect in ChatPage.tsx, kept at the same 400px cap);
-     overflow is explicit, not left to each browser's own textarea
-     default, so a vertical scrollbar reliably appears once scrollHeight
-     passes that cap, and a horizontal one if a single unbroken long token
-     ever exceeds the width. */
-  max-height: 400px;
+  /* User-directed - fixed at rows={4}'s own intrinsic height (2 rows
+     taller than before), not auto-growing: an earlier version of this
+     also grew the box taller as you typed (a [draft]-keyed effect
+     resizing it up to a 400px cap), but that moved the gold frame around
+     it too - dropped, so the frame stays put and only the scrollbar
+     below reacts to overflow, like a normal fixed-size input. Overflow
+     is explicit, not left to each browser's own textarea default, so it
+     reliably scrolls instead of silently clipping. */
   overflow-y: auto;
   overflow-x: auto;
   line-height: 1.5;
@@ -3248,6 +3249,14 @@ table.iqa-kw-table tr:last-child td {
 .modal-card-wide {
   max-width: 640px;
 }
+/* Phase 33 - ChatbotFeaturesModal only, user-directed ("the chatbot
+   features popup window width can be more"): wider still than
+   .modal-card-wide, since this modal's content is now full framed
+   section cards (see .feature-section-card below), not single-line
+   query rows - those need more breathing room than 640px gives them. */
+.modal-card-xwide {
+  max-width: 820px;
+}
 /* Phase 30 - renamed from .sample-queries-list/.sample-queries-category
    (generic "titled section" layout, nothing query-specific in these 2
    rules) once ChatbotFeaturesModal needed the exact same section look
@@ -3278,18 +3287,92 @@ table.iqa-kw-table tr:last-child td {
 .modal-section p:last-child {
   margin-bottom: 0;
 }
-/* Phase 31 - one capability "card" inside ChatbotFeaturesModal's "What it
-   can do" section - groups a title/description/try-it row/learn-more link
-   that would otherwise read as one undifferentiated wall of <p> tags. */
+/* Phase 33 - ChatbotFeaturesModal's own major-section frame: Overview/Key
+   Capabilities/Getting Started/Good to Know each get a visible card
+   (border + a slightly different tone from the modal's own background -
+   .surface-sunken against the modal's .surface - so sections read as
+   distinct, not just a run of h3-then-paragraphs) with real spacing
+   between them. Distinct from .modal-section-list/.modal-section, which
+   SampleQueriesModal keeps unchanged - that modal's query rows didn't
+   need a frame, this one's prose does. */
+.feature-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.feature-section-card {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+}
+.feature-section-card h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+/* Direct-child combinator, not a descendant selector - .feature-capability
+   below has its own <p> styling with its own margins (the title included);
+   a plain ".feature-section-card p" would also match those nested
+   paragraphs and, being more specific than ".feature-capability-title"
+   alone, would win the cascade and override its margin. */
+.feature-section-card > p {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.feature-section-card > p:last-child {
+  margin-bottom: 0;
+}
+/* One capability "card" inside the Key Capabilities section-card - a
+   second tone step back toward .surface (the base the section-card
+   stepped away from) plus a gold left accent, so each capability reads
+   as its own unit nested inside the wider section frame, not another
+   flat paragraph run. */
 .feature-capability {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
   margin: 0 0 14px;
 }
 .feature-capability:last-child {
   margin-bottom: 0;
 }
+/* :not(...) both classes - so this generic paragraph rule doesn't fight
+   .feature-capability-title's margin or .dev-note-inline's muted
+   color/caption size below; all 3 are plain <p> tags with otherwise
+   similar specificity, and whichever rule happened to match would win
+   regardless of source order. */
+.feature-capability p:not(.feature-capability-title):not(.dev-note-inline) {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.feature-capability p:not(.feature-capability-title):not(.dev-note-inline):last-child {
+  margin-bottom: 0;
+}
 .feature-capability-title {
   font-weight: 600;
-  margin: 0 0 2px;
+  font-size: 13.5px;
+  margin: 0 0 4px;
+}
+/* The closing "Ready to explore?" line - a callout, not a 5th titled
+   section competing with the 4 real ones above. */
+.feature-cta {
+  margin: 4px 0 0;
+  padding: 12px 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
 }
 .sample-queries-turns {
   list-style: none;

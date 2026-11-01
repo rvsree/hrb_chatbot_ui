@@ -377,18 +377,6 @@ export default function ChatPage() {
   }, [activeConversationId, conversations, isSending]);
 
   useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      return;
-    }
-    textarea.style.height = "auto";
-    // User-directed - starts 2 rows taller (4 vs 2); the growth cap moves
-    // from 320 to 400 to match, kept in sync with .composer-row textarea's
-    // own max-height in App.css.
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 400)}px`;
-  }, [draft]);
-
-  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (adminMenuRef.current && !adminMenuRef.current.contains(event.target as Node)) {
         setIsAdminMenuOpen(false);
