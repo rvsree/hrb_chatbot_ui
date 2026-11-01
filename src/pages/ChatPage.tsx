@@ -1310,6 +1310,15 @@ export default function ChatPage() {
                 min={1}
                 step={1}
               />
+              <SettingField
+                userProfile={currentIdentity}
+                settingKey="wake_up_resume_limit_per_ip_per_day"
+                label="Wake-up Lambda - resume limit per IP per day"
+                helpText="hrb_chatbot_service's own Phase 287: caps how many times the public wake-up Lambda will resume hrb-chatbot for the same caller IP in a day."
+                kind="number"
+                min={1}
+                step={1}
+              />
             </div>
           )}
         </div>

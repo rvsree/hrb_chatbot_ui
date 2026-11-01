@@ -17,6 +17,8 @@ const DOCUMENTED_DEFAULTS: Record<string, number | string> = {
   llm_openai_circuit_breaker_cooldown_seconds: 10,
   llm_anthropic_circuit_breaker_failure_threshold: 2,
   llm_anthropic_circuit_breaker_cooldown_seconds: 10,
+  // Phase 24 (hrb_chatbot_service's own Phase 287) - wake_up_limiter.py's own default.
+  wake_up_resume_limit_per_ip_per_day: 10,
 };
 
 interface SettingFieldProps {
