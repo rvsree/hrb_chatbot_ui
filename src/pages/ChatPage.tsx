@@ -1312,6 +1312,15 @@ export default function ChatPage() {
               />
               <SettingField
                 userProfile={currentIdentity}
+                settingKey="idle_auto_pause_threshold_minutes"
+                label="Idle auto-pause threshold (minutes)"
+                helpText="hrb_chatbot_service's own Phase 288: how many minutes of no activity before the idle-auto-pause Lambda pauses the AWS Demo services. Takes effect on the Lambda's next scheduled run, no redeploy needed."
+                kind="number"
+                min={1}
+                step={1}
+              />
+              <SettingField
+                userProfile={currentIdentity}
                 settingKey="wake_up_resume_limit_per_ip_per_day"
                 label="Wake-up Lambda - resume limit per IP per day"
                 helpText="hrb_chatbot_service's own Phase 287: caps how many times the public wake-up Lambda will resume hrb-chatbot for the same caller IP in a day."

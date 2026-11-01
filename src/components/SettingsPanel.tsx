@@ -19,6 +19,8 @@ const DOCUMENTED_DEFAULTS: Record<string, number | string> = {
   llm_anthropic_circuit_breaker_cooldown_seconds: 10,
   // Phase 24 (hrb_chatbot_service's own Phase 287) - wake_up_limiter.py's own default.
   wake_up_resume_limit_per_ip_per_day: 10,
+  // Phase 24 (hrb_chatbot_service's own Phase 288) - idle_auto_pause_handler.py's own default.
+  idle_auto_pause_threshold_minutes: 60,
 };
 
 interface SettingFieldProps {
