@@ -1054,9 +1054,23 @@ button.conversation-item:hover {
 /* User-directed - real-world-practice character counter under the gold
    box, same below-threshold/at-threshold banding idea as
    ExplainabilityModal's eval scores (muted until close to the cap, then
-   warns, then flags once truly at it). */
+   warns, then flags once truly at it).
+
+   Bug found from a screenshot: align-self: flex-end aligned this to
+   .composer-row-wrapper's own right edge - but .chat-column (the class
+   .composer-row/the gold box also carries) centers itself at max-width:
+   760px inside that wrapper via margin: 0 auto, so on any screen wider
+   than 760px there's empty wrapper space to the box's right, and the
+   counter floated out into it, nowhere near the box. Mirroring the same
+   max-width/margin here keeps the counter's own right edge locked to the
+   gold box's right edge (under "Send") regardless of screen width,
+   instead of the wrapper's. */
 .composer-char-count {
-  align-self: flex-end;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: right;
+  padding-right: 4px;
   font-size: 11px;
   color: var(--text-muted);
 }
