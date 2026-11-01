@@ -113,9 +113,9 @@ export default function SampleQueriesModal({ onClose, onSelect }: SampleQueriesM
           sending.
         </p>
 
-        <div className="sample-queries-list">
+        <div className="modal-section-list">
           {CATEGORIES.map((category, categoryIndex) => (
-            <div key={categoryIndex} className="sample-queries-category">
+            <div key={categoryIndex} className="modal-section">
               {category.title && <h3>{category.title}</h3>}
               {category.note && <p className="dev-note-inline">{category.note}</p>}
               <ul className="sample-queries-turns">

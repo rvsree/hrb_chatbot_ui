@@ -21,6 +21,7 @@ import DocLink from "../components/DocLink";
 import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
 import HelpPopover from "../components/HelpPopover";
+import ChatbotFeaturesModal from "../components/ChatbotFeaturesModal";
 import MessageBubble from "../components/MessageBubble";
 import SampleQueriesModal from "../components/SampleQueriesModal";
 import { SettingField } from "../components/SettingsPanel";
@@ -299,6 +300,9 @@ export default function ChatPage() {
   // Phase 27 - "Sample queries" link next to the composer, same purpose
   // as the login page's own "Need sample login credentials?" link.
   const [showSampleQueriesModal, setShowSampleQueriesModal] = useState(false);
+  // Phase 30 - "Chatbot Features" link right below it - an intro/overview
+  // instead of clickable examples.
+  const [showChatbotFeaturesModal, setShowChatbotFeaturesModal] = useState(false);
   const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -838,6 +842,15 @@ export default function ChatPage() {
     );
     persist(updated);
     setFeedbackTarget(null);
+  }
+
+  // Phase 31 - shared by SampleQueriesModal and ChatbotFeaturesModal's own
+  // "Try" queries - same fill-the-composer-and-focus behavior either way.
+  function handleSelectSampleQuery(query: string) {
+    setDraft(query);
+    // Deferred one tick - the modal is still closing/unmounting in this
+    // same event, so focus must wait for that to settle.
+    setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
   return (
@@ -1698,25 +1711,29 @@ export default function ChatPage() {
               2026-10-30) - a plain text link, same `.link-button` style
               as the login page's own "Need sample login credentials?"
               link, reads unambiguously instead. Moved outside the
-              gold-bordered box too, to its right. */}
-          <button type="button" className="link-button composer-side-control" onClick={() => setShowSampleQueriesModal(true)}>
-            Sample queries?
-          </button>
+              gold-bordered box too, to its right. Phase 30 - stacked in
+              a column with the new Chatbot Features link right below it,
+              same reasoning ("not sure what this is/how to use it") as a
+              single unit at the composer's right edge. */}
+          <div className="composer-right-links">
+            <button type="button" className="link-button" onClick={() => setShowSampleQueriesModal(true)}>
+              Sample queries?
+            </button>
+            <button type="button" className="link-button" onClick={() => setShowChatbotFeaturesModal(true)}>
+              Chatbot Features
+            </button>
+          </div>
         </form>
       </div>
 
       {showUnpaidLeaveModal && <UnpaidLeaveModal onClose={() => setShowUnpaidLeaveModal(false)} />}
 
       {showSampleQueriesModal && (
-        <SampleQueriesModal
-          onClose={() => setShowSampleQueriesModal(false)}
-          onSelect={(query) => {
-            setDraft(query);
-            // Deferred one tick - the modal is still closing/unmounting
-            // in this same event, so focus must wait for that to settle.
-            setTimeout(() => textareaRef.current?.focus(), 0);
-          }}
-        />
+        <SampleQueriesModal onClose={() => setShowSampleQueriesModal(false)} onSelect={handleSelectSampleQuery} />
+      )}
+
+      {showChatbotFeaturesModal && (
+        <ChatbotFeaturesModal onClose={() => setShowChatbotFeaturesModal(false)} onSelect={handleSelectSampleQuery} />
       )}
 
       {feedbackTarget && <FeedbackModal onClose={() => setFeedbackTarget(null)} onSubmit={applyFeedback} />}

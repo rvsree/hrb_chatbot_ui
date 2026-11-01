@@ -1060,6 +1060,19 @@ button.conversation-item:hover {
   height: 36px;
 }
 
+/* Phase 30 - "Sample queries?" and "Chatbot Features" stacked as one
+   unit at the composer's right edge, outside the gold-bordered box -
+   same positioning idea as .composer-side-control above, but a column
+   of 2 links instead of a single row, so it no longer reuses that class. */
+.composer-right-links {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+
 /* 2026-10-30 - "Enable GenAI Chat Workflow" checkbox, moved here from
    Settings -> RAG Search (user-directed, 3rd round) - a real framed box of
    its own to the left of .composer-row's gold-bordered box, not an
@@ -3183,19 +3196,48 @@ table.iqa-kw-table tr:last-child td {
 .modal-card-wide {
   max-width: 640px;
 }
-.sample-queries-list {
+/* Phase 30 - renamed from .sample-queries-list/.sample-queries-category
+   (generic "titled section" layout, nothing query-specific in these 2
+   rules) once ChatbotFeaturesModal needed the exact same section look
+   with plain prose instead of query rows - reused, not duplicated. */
+.modal-section-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.sample-queries-category h3 {
+.modal-section h3 {
   margin: 16px 0 4px;
   font-size: 13px;
   font-weight: 700;
   color: var(--accent);
 }
-.sample-queries-category:first-child h3 {
+.modal-section:first-child h3 {
   margin-top: 4px;
+}
+/* Phase 30 - plain prose inside a .modal-section (ChatbotFeaturesModal) -
+   same 13.5px size as .sample-queries-text for visual consistency
+   between the two modals, just without that one's bordered-row shape. */
+.modal-section p {
+  margin: 0 0 6px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.modal-section p:last-child {
+  margin-bottom: 0;
+}
+/* Phase 31 - one capability "card" inside ChatbotFeaturesModal's "What it
+   can do" section - groups a title/description/try-it row/learn-more link
+   that would otherwise read as one undifferentiated wall of <p> tags. */
+.feature-capability {
+  margin: 0 0 14px;
+}
+.feature-capability:last-child {
+  margin-bottom: 0;
+}
+.feature-capability-title {
+  font-weight: 600;
+  margin: 0 0 2px;
 }
 .sample-queries-turns {
   list-style: none;
