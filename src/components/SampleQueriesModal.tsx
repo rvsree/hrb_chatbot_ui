@@ -18,9 +18,14 @@ interface SampleCategory {
   // already-tested multi-turn sequence - rendered as "Turn 1/2/3" so a
   // visitor knows to send them one at a time, not all at once.
   turns: SampleQuery[];
+  // Phase 28 - computed below, not authored here. A single query had no
+  // label at all before this - every row gets one now. Only used for
+  // single-turn entries; a multi-turn entry keeps its existing "Turn N"
+  // labels unchanged (it's not blank today, so it isn't touched).
+  sequenceNumber?: number;
 }
 
-const CATEGORIES: SampleCategory[] = [
+const RAW_CATEGORIES: SampleCategory[] = [
   {
     title: "HR policy basics",
     turns: [{ text: "What percentage does Amazing Bank match on my 401(k) contributions?" }],
@@ -76,6 +81,23 @@ const CATEGORIES: SampleCategory[] = [
   },
 ];
 
+// Phase 28 - running number per single-turn query, resetting at the
+// start of each real category (a truthy title marks that start - the
+// "" continuation entries above are each their own row, not a nested
+// list, so this walk is how they get grouped back together). Computed
+// once at module load, not per render - CATEGORIES is static content.
+let singleQueryCounter = 0;
+const CATEGORIES: SampleCategory[] = RAW_CATEGORIES.map((category) => {
+  if (category.title) {
+    singleQueryCounter = 0;
+  }
+  if (category.turns.length > 1) {
+    return category;
+  }
+  singleQueryCounter += 1;
+  return { ...category, sequenceNumber: singleQueryCounter };
+});
+
 interface SampleQueriesModalProps {
   onClose: () => void;
   onSelect: (query: string) => void;
@@ -99,7 +121,9 @@ export default function SampleQueriesModal({ onClose, onSelect }: SampleQueriesM
               <ul className="sample-queries-turns">
                 {category.turns.map((turn, turnIndex) => (
                   <li key={turnIndex}>
-                    {category.turns.length > 1 && <span className="sample-queries-turn-label">Turn {turnIndex + 1}</span>}
+                    <span className="sample-queries-turn-label">
+                      {category.turns.length > 1 ? `Turn ${turnIndex + 1}` : category.sequenceNumber}
+                    </span>
                     <span className="sample-queries-text">{turn.text}</span>
                     <CopyButton
                       text={turn.text}

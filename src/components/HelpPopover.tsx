@@ -39,7 +39,11 @@ function getPopoverBounds(anchorEl: HTMLElement | null) {
 
 interface HelpPopoverProps {
   label: string;
-  children: ReactNode;
+  // Phase 29 - a function form, receiving closePopover, lets content that
+  // performs its own "done" action (e.g. LoginPage's sample-persona
+  // CopyButtons) close the popover itself afterward - every existing
+  // call site keeps passing plain ReactNode unchanged, this is additive.
+  children: ReactNode | ((closePopover: () => void) => ReactNode);
   // "muted" matches the old info-icon-unimplemented look (a stub feature,
   // e.g. sql_db_agent) - visually distinct from a real, working one.
   variant?: "default" | "muted";
@@ -219,7 +223,7 @@ export default function HelpPopover({ label, children, variant = "default", trig
                 ×
               </button>
             </div>
-            <div className="help-popover-body">{children}</div>
+            <div className="help-popover-body">{typeof children === "function" ? children(closePopover) : children}</div>
             <div className="help-popover-footer">
               {/* 2026-10-19 - user-requested: icon instead of the word
                   "Copy", with the label moved to a hover tooltip (native

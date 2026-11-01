@@ -312,30 +312,38 @@ export default function LoginPage() {
             order), each with its own copy icon that also switches Role
             to match. */}
         <HelpPopover label="Sample login" triggerContent="Need sample login credentials?" triggerClassName="link-button login-sample-credentials-link">
-          {ALL_SAMPLE_PERSONAS.map((persona) => (
-            <p key={persona.role}>
-              <strong>{SAMPLE_PERSONA_LABELS[persona.role]}</strong> - Employee ID: <strong>{persona.employeeId}</strong>,
-              Emp Name: <strong>{persona.fullName}</strong>{" "}
-              <CopyButton
-                text={`${persona.employeeId} / ${persona.fullName}`}
-                label={`${SAMPLE_PERSONA_LABELS[persona.role]} sample identity`}
-                onCopied={() => {
-                  setEmployeeId(persona.employeeId);
-                  setFullName(persona.fullName);
-                  handleRoleChange(persona.role);
-                }}
-              />
-            </p>
-          ))}
-          <p>
-            <a
-              href="https://github.com/rvsree/hrb_emp_assist/blob/master/README.md#new-here-trying-the-live-demo"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Project documentation →
-            </a>
-          </p>
+          {(closePopover) => (
+            <>
+              {ALL_SAMPLE_PERSONAS.map((persona) => (
+                <p key={persona.role}>
+                  <strong>{SAMPLE_PERSONA_LABELS[persona.role]}</strong> - Employee ID: <strong>{persona.employeeId}</strong>,
+                  Emp Name: <strong>{persona.fullName}</strong>{" "}
+                  <CopyButton
+                    text={`${persona.employeeId} / ${persona.fullName}`}
+                    label={`${SAMPLE_PERSONA_LABELS[persona.role]} sample identity`}
+                    onCopied={() => {
+                      setEmployeeId(persona.employeeId);
+                      setFullName(persona.fullName);
+                      handleRoleChange(persona.role);
+                      // Phase 29 - user-reported: picking a persona filled
+                      // the form correctly, but the popover itself stayed
+                      // open - close it now that there's nothing left to do.
+                      closePopover();
+                    }}
+                  />
+                </p>
+              ))}
+              <p>
+                <a
+                  href="https://github.com/rvsree/hrb_emp_assist/blob/master/README.md#new-here-trying-the-live-demo"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Project documentation →
+                </a>
+              </p>
+            </>
+          )}
         </HelpPopover>
       </form>
     </div>
