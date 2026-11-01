@@ -52,6 +52,14 @@ import type {
 // Phase 240 - "Auto" added: classifies single- vs multi-agentic-rag per
 // question instead of the caller picking. Both forced options stay
 // selectable too (demos/interviews - this project's whole purpose).
+// User-directed - cap the composer at a real-world chat-input length, not
+// an unbounded textarea. Matches the backend's own validation exactly
+// (models/rag.py, agentic_rag.py, multi_agentic_rag.py all enforce
+// max_length=2000 on `query`), so this is a UX convenience (immediate
+// feedback, no round trip to discover a 422) - not a separate, invented
+// limit the backend doesn't already apply.
+const MAX_QUERY_LENGTH = 2000;
+
 const MODE_LABELS: Record<ChatMode, string> = {
   "genai-rag": "Direct RAG",
   "single-agentic-rag": "Reflex Agent",
@@ -374,7 +382,10 @@ export default function ChatPage() {
       return;
     }
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 320)}px`;
+    // User-directed - starts 2 rows taller (4 vs 2); the growth cap moves
+    // from 320 to 400 to match, kept in sync with .composer-row textarea's
+    // own max-height in App.css.
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 400)}px`;
   }, [draft]);
 
   useEffect(() => {
@@ -1670,39 +1681,59 @@ export default function ChatPage() {
               </HelpPopover>
             </div>
           )}
-          <div className="chat-column composer-row">
-            <textarea
-              ref={textareaRef}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleComposerKeyDown}
-              placeholder="Ask about dental plans, PTO, 401(k)... (Enter to send, Shift+Enter for a new line)"
-              rows={2}
-              disabled={isSending}
-            />
-            {/* Phase 140/141: ad-hoc document chat only ever wires to GenAI
-                RAG mode - hide the control entirely rather than let a user
-                attach a file while a mode that can't use it is selected.
-                Phase 141 adds a second, independent gate: the "Enable
-                GenAI Chat Workflow" checkbox above. Both must be true. */}
-            {selectedMode === "genai-rag" && adhocChatEnabled && (
-              <label className="composer-icon-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48" />
-                </svg>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,.csv"
-                  multiple
-                  hidden
-                  onChange={handleAdhocFileSelect}
-                  disabled={isSending}
-                />
-              </label>
-            )}
-            <button type="submit" disabled={isSending || !draft.trim()}>
-              {isSending ? "Asking..." : "Send"}
-            </button>
+          <div className="composer-row-wrapper">
+            <div className="chat-column composer-row">
+              <textarea
+                ref={textareaRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value.slice(0, MAX_QUERY_LENGTH))}
+                onKeyDown={handleComposerKeyDown}
+                placeholder="Ask about dental plans, PTO, 401(k)... (Enter to send, Shift+Enter for a new line)"
+                rows={4}
+                maxLength={MAX_QUERY_LENGTH}
+                disabled={isSending}
+              />
+              {/* Phase 140/141: ad-hoc document chat only ever wires to GenAI
+                  RAG mode - hide the control entirely rather than let a user
+                  attach a file while a mode that can't use it is selected.
+                  Phase 141 adds a second, independent gate: the "Enable
+                  GenAI Chat Workflow" checkbox above. Both must be true. */}
+              {selectedMode === "genai-rag" && adhocChatEnabled && (
+                <label className="composer-icon-button" title="Attach up to 3 files (.pdf/.docx/.csv) to ask about them directly" aria-label="Attach files">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48" />
+                  </svg>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.csv"
+                    multiple
+                    hidden
+                    onChange={handleAdhocFileSelect}
+                    disabled={isSending}
+                  />
+                </label>
+              )}
+              <button type="submit" disabled={isSending || !draft.trim()}>
+                {isSending ? "Asking..." : "Send"}
+              </button>
+            </div>
+            {/* User-directed - a visible counter is the real-world-practice
+                half of the length cap: maxLength alone just stops typing
+                with no explanation. Muted until close to the cap, then
+                warns, matching the same below-threshold/at-threshold
+                banding convention ExplainabilityModal's eval scores use. */}
+            <div
+              className={
+                "composer-char-count" +
+                (draft.length >= MAX_QUERY_LENGTH
+                  ? " composer-char-count-limit"
+                  : draft.length >= MAX_QUERY_LENGTH * 0.9
+                    ? " composer-char-count-warning"
+                    : "")
+              }
+            >
+              {draft.length} / {MAX_QUERY_LENGTH}
+            </div>
           </div>
           {/* Phase 28 - replaces the round icon-button version: a round,
               unlabeled button in this exact row reads as a voice/mic

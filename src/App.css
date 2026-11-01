@@ -1020,9 +1020,15 @@ button.conversation-item:hover {
   gap: 12px;
 }
 
-.composer .composer-row {
+/* User-directed - the gold box now shares its flex slot in .composer with
+   a small character-count line underneath, so the thing that stretches to
+   fill the row is this wrapper, not .composer-row itself. */
+.composer-row-wrapper {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .composer-row {
@@ -1043,6 +1049,23 @@ button.conversation-item:hover {
 .composer-row:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* User-directed - real-world-practice character counter under the gold
+   box, same below-threshold/at-threshold banding idea as
+   ExplainabilityModal's eval scores (muted until close to the cap, then
+   warns, then flags once truly at it). */
+.composer-char-count {
+  align-self: flex-end;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.composer-char-count-warning {
+  color: var(--warning);
+}
+.composer-char-count-limit {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 /* Phase 28 - Request Leave (a button + its own "?" HelpPopover) and the
@@ -1070,7 +1093,14 @@ button.conversation-item:hover {
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
-  gap: 2px;
+  /* User-directed - the 2px gap read as the two links nearly overlapping,
+     flush against the box's bottom border. margin-bottom lifts the whole
+     pair off that border; the larger gap on top of it is what actually
+     separates "Sample queries?" from "Chatbot Features" - so the top link
+     ends up moved up by both amounts combined, the bottom one by just the
+     margin. */
+  gap: 16px;
+  margin-bottom: 14px;
 }
 
 /* 2026-10-30 - "Enable GenAI Chat Workflow" checkbox, moved here from
@@ -1198,7 +1228,15 @@ button.conversation-item:hover {
   background: transparent;
   resize: none;
   padding: 8px 0;
-  max-height: 320px;
+  /* User-directed - 2 rows taller (4 vs 2) and grows further on its own
+     (see the [draft] effect in ChatPage.tsx, kept at the same 400px cap);
+     overflow is explicit, not left to each browser's own textarea
+     default, so a vertical scrollbar reliably appears once scrollHeight
+     passes that cap, and a horizontal one if a single unbroken long token
+     ever exceeds the width. */
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: auto;
   line-height: 1.5;
   font-family: inherit;
 }
