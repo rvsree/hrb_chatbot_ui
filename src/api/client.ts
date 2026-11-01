@@ -1569,6 +1569,24 @@ export async function resumeBackendActivation(): Promise<BackendActivationStatus
   return (await response.json()) as BackendActivationStatusResponse;
 }
 
+// Phase 286 (hrb_chatbot_service's own Phase 286) - sign-out-triggered
+// pause accelerant. Fire-and-forget from the caller's own perspective -
+// IdentityContext's logout() never blocks the actual client-side sign-out
+// on this call's result, same reasoning the backend's own fail-closed
+// design already applies.
+export async function signOut(employeeId: string, tabSessionId?: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/v1/auth/sign-out`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_id: employeeId, tab_session_id: tabSessionId }),
+    });
+  } catch {
+    // Best-effort only - a network error here must never surface to the
+    // person signing out.
+  }
+}
+
 // Phase 22 (hrb_chatbot_service's own Phase 285) - Explainability modal's
 // Testing Strategy tab, up to 10 real sample rows per dataset. Public and
 // unauthenticated, same as getBackendActivationStatus() above - no

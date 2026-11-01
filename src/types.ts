@@ -8,6 +8,11 @@ export interface UserProfile {
   // (Intl.DateTimeFormat), captured once at login. No reliable
   // server-side way to infer this, so the frontend is the only source.
   timezone?: string;
+  // Phase 23 (hrb_chatbot_service Phase 286) - a random id generated
+  // per browser tab (sessionStorage, never localStorage - see
+  // IdentityContext.tsx), so 2 tabs signed in as the same persona count
+  // as 2 active sessions on the backend's own presence tracker, not 1.
+  tab_session_id?: string;
 }
 
 // Phase 2 - null when the demo-limit check is disabled/not applicable
