@@ -67,6 +67,12 @@ import type {
 // Phase 94/95 state. Override with VITE_API_BASE_URL in .env for local dev.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://hrb-chatbot.rvsree.dev";
 
+// Phase 24 (hrb_chatbot_service's own Phase 287) - deliberately a separate
+// base URL from API_BASE_URL, not a path on it: this one call must work
+// even when hrb-chatbot itself is fully paused/unreachable. Empty until
+// the Lambda/Function URL is actually provisioned in AWS.
+const WAKE_UP_FUNCTION_URL = import.meta.env.VITE_WAKE_UP_FUNCTION_URL ?? "";
+
 export class ApiRequestError extends Error {
   code: string;
   status: number;
@@ -1598,4 +1604,35 @@ export async function getTestingStrategySample<T>(dataset: TestingStrategyDatase
     await parseErrorAndThrow(response);
   }
   return (await response.json()) as TestingStrategySampleResponse<T>;
+}
+
+// Phase 24 (hrb_chatbot_service's own Phase 287) - called unconditionally,
+// before validateLogin(), the instant Sign In is clicked. Never throws -
+// a network error or an over-the-rate-limit response is treated the same
+// as "still waking up, keep polling /ping" (ChatbotWakeWait's own job),
+// not a login failure, matching signOut()'s own fire-and-forget shape
+// above. No-ops when the Lambda isn't configured (local dev, or before
+// its AWS infra is provisioned) - hrb-chatbot is never paused outside
+// production anyway.
+export async function wakeUpChatbotService(): Promise<void> {
+  if (!WAKE_UP_FUNCTION_URL) {
+    return;
+  }
+  try {
+    await fetch(WAKE_UP_FUNCTION_URL, { method: "POST" });
+  } catch {
+    // Intentionally ignored - see comment above.
+  }
+}
+
+// Phase 24 - the real "is hrb-chatbot back yet" signal ChatbotWakeWait
+// polls. /ping needs no identity and makes no provider call, so a plain
+// boolean is enough - callers don't need the response body.
+export async function pingChatbotService(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ping`);
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

@@ -7,6 +7,7 @@ import EyeIcon from "../components/EyeIcon";
 import CopyButton from "../components/CopyButton";
 import HelpPopover from "../components/HelpPopover";
 import AwsActivationWait from "../components/AwsActivationWait";
+import ChatbotWakeWait from "../components/ChatbotWakeWait";
 
 // Phase 282 - matches the backend's own Pydantic `pattern` constraint
 // (models/common.py/auth.py) exactly - this is a UX nicety (fail fast,
@@ -72,6 +73,12 @@ export default function LoginPage() {
     mustResetSecretCode: boolean;
   } | null>(null);
   const [awsWaitActive, setAwsWaitActive] = useState(false);
+  // Phase 24 (hrb_chatbot_service's own Phase 287) - set the instant Sign
+  // In is clicked, BEFORE validateLogin() ever runs. While true, the form
+  // is replaced by ChatbotWakeWait; performLogin() is what that
+  // component's onProceed calls once hrb-chatbot answers /ping (or the
+  // visitor overrides the wait).
+  const [chatbotWakeActive, setChatbotWakeActive] = useState(false);
 
   function handleSecretCodeChange(value: string) {
     setSecretCode(value);
@@ -121,13 +128,21 @@ export default function LoginPage() {
     navigate(mustResetSecretCode ? "/admin/reset-secret-code" : "/chat");
   }
 
-  async function handleSubmit(event: FormEvent) {
+  function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!employeeId.trim() || !fullName.trim() || isValidating) {
       return;
     }
-    setIsValidating(true);
+    // Phase 24 - swap to ChatbotWakeWait immediately; performLogin() (the
+    // real validateLogin() call) only runs once that component confirms
+    // hrb-chatbot is reachable.
     setLoginError(null);
+    setChatbotWakeActive(true);
+  }
+
+  async function performLogin() {
+    setChatbotWakeActive(false);
+    setIsValidating(true);
     try {
       const result = await validateLogin(employeeId.trim(), fullName.trim(), role, secretCode.trim() || undefined);
       // Phase 2 (hrb_chatbot_service Phase 265) - the backend's own login
@@ -180,6 +195,14 @@ export default function LoginPage() {
     } finally {
       setIsValidating(false);
     }
+  }
+
+  // Phase 24 - runs before validateLogin() ever gets a chance to fail
+  // against a paused hrb-chatbot. Checked ahead of awsWaitActive below -
+  // the two states are never both true (chatbotWakeActive is always
+  // cleared before performLogin() runs).
+  if (chatbotWakeActive) {
+    return <ChatbotWakeWait onProceed={performLogin} />;
   }
 
   // Phase 21 - once a successful login's own backend-activation check comes
