@@ -161,7 +161,18 @@ export default function LoginPage() {
         setAwsWaitActive(true);
       }
     } catch (error) {
-      if (error instanceof ApiRequestError) {
+      // Phase 23/24 (hrb_chatbot_service's own real incident, 2026-10-31) -
+      // a paused/unreachable backend answers login with a bare 404 (App
+      // Runner's own front door, not this app's json_error shape) in
+      // under a second - confirmed live. That's not a real credential
+      // problem, so it gets its own message instead of the raw
+      // "Request failed with status 404" text, which would otherwise
+      // read as if something was actually wrong with the login itself.
+      const likelyUnreachableBackend =
+        error instanceof ApiRequestError && [404, 502, 503, 504].includes(error.status);
+      if (likelyUnreachableBackend) {
+        setLoginError("Having trouble reaching the server - it may be starting up. Please try again in a moment.");
+      } else if (error instanceof ApiRequestError) {
         setLoginError(error.message);
       } else {
         setLoginError("Something went wrong reaching the backend.");
