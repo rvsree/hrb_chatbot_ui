@@ -1,12 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ApiRequestError, getBackendActivationStatus, validateLogin } from "../api/client";
+import { ApiRequestError, resumeBackendActivation, validateLogin } from "../api/client";
 import { useIdentity } from "../context/IdentityContext";
 import type { Role, UserProfile } from "../types";
 import EyeIcon from "../components/EyeIcon";
 import CopyButton from "../components/CopyButton";
 import HelpPopover from "../components/HelpPopover";
-import AwsActivationWait from "../components/AwsActivationWait";
 import ChatbotWakeWait from "../components/ChatbotWakeWait";
 
 // Phase 282 - matches the backend's own Pydantic `pattern` constraint
@@ -64,15 +63,6 @@ export default function LoginPage() {
   const isAdminTier = role === "admin" || role === "employee_admin";
   const revealGatedOnSecretCode = isAdminTier;
   const revealAllowed = !revealGatedOnSecretCode || isSecretCodeVerified;
-  // Phase 21 - set only once validateLogin() succeeds and the backend
-  // reports all_running: false. While this is non-null, the form itself
-  // is replaced by AwsActivationWait; proceedToApp() is what that
-  // component calls once activation finishes (or the visitor overrides it).
-  const [pendingLoginResult, setPendingLoginResult] = useState<{
-    userProfile: UserProfile;
-    mustResetSecretCode: boolean;
-  } | null>(null);
-  const [awsWaitActive, setAwsWaitActive] = useState(false);
   // Phase 24 (hrb_chatbot_service's own Phase 287) - set the instant Sign
   // In is clicked, BEFORE validateLogin() ever runs. While true, the form
   // is replaced by ChatbotWakeWait; performLogin() is what that
@@ -120,9 +110,7 @@ export default function LoginPage() {
     }
   }
 
-  // Phase 21 - the actual login()/navigate() pair, split out of
-  // handleSubmit so both the immediate "already running" path and
-  // AwsActivationWait's own onProceed can call it.
+  // Phase 21 - the actual login()/navigate() pair, split out of performLogin.
   function proceedToApp(userProfile: UserProfile, mustResetSecretCode: boolean) {
     login(userProfile);
     navigate(mustResetSecretCode ? "/admin/reset-secret-code" : "/chat");
@@ -152,29 +140,24 @@ export default function LoginPage() {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const userProfile = { ...result.userProfile, timezone };
 
-      // Phase 21 - hrb_chatbot_service Phase 284: in local dev this always
-      // resolves to all_running: true immediately (the backend no-ops
-      // outside production), so this path is a no-op there. In production,
-      // a paused AWS Demo environment (Phase 261) needs a visitor-facing
-      // way back in - AwsActivationWait owns the resume/poll/timeout cycle.
-      let allRunning = true;
-      try {
-        const activationStatus = await getBackendActivationStatus();
-        allRunning = activationStatus.all_running;
-      } catch {
-        // An unknown activation state is treated the same as "not running
-        // yet" - AwsActivationWait's own resume+poll+timeout cycle handles
-        // a flaky activation check too, rather than silently proceeding
-        // into a backend that might still be asleep.
-        allRunning = false;
-      }
+      // Phase 26 (hrb_chatbot_service's own Phase 289 fix) - a real
+      // incident this session: Phase 21/284's own wait screen used to
+      // block the chat page behind ALL 5 other AWS Demo services, even
+      // though a basic first chat message needs none of them (confirmed
+      // by reading the actual pipeline code - it never calls out to the
+      // 2 standalone RAG services over the network, and hrb-lms-mcp/
+      // hrb-platform-components are only needed for specific questions/
+      // admin pages, not every message). Fire the resume in the
+      // background instead of waiting on it - a visitor goes straight to
+      // chat; a question that genuinely needs one of those services
+      // (e.g. a leave-balance lookup) may briefly fail if asked before it
+      // finishes waking, which the agent's own tool-calling error
+      // handling already covers, same as any other backend hiccup.
+      resumeBackendActivation().catch(() => {
+        // Intentionally ignored - see comment above.
+      });
 
-      if (allRunning) {
-        proceedToApp(userProfile, result.mustResetSecretCode);
-      } else {
-        setPendingLoginResult({ userProfile, mustResetSecretCode: result.mustResetSecretCode });
-        setAwsWaitActive(true);
-      }
+      proceedToApp(userProfile, result.mustResetSecretCode);
     } catch (error) {
       // Phase 23/24 (hrb_chatbot_service's own real incident, 2026-10-31) -
       // a paused/unreachable backend answers login with a bare 404 (App
@@ -198,23 +181,9 @@ export default function LoginPage() {
   }
 
   // Phase 24 - runs before validateLogin() ever gets a chance to fail
-  // against a paused hrb-chatbot. Checked ahead of awsWaitActive below -
-  // the two states are never both true (chatbotWakeActive is always
-  // cleared before performLogin() runs).
+  // against a paused hrb-chatbot.
   if (chatbotWakeActive) {
     return <ChatbotWakeWait onProceed={performLogin} />;
-  }
-
-  // Phase 21 - once a successful login's own backend-activation check comes
-  // back false, the form itself is replaced by the wait screen - the
-  // same reasoning as this file's other full-content swaps (isAdminTier),
-  // just gated on this new state instead.
-  if (awsWaitActive && pendingLoginResult) {
-    return (
-      <AwsActivationWait
-        onProceed={() => proceedToApp(pendingLoginResult.userProfile, pendingLoginResult.mustResetSecretCode)}
-      />
-    );
   }
 
   return (

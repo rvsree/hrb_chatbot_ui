@@ -1549,19 +1549,14 @@ export async function pauseAwsDemoServices(
   return (await response.json()) as AwsDemoStatusResponse;
 }
 
-// Phase 21 - hrb_chatbot_service's own Phase 284 routes. Public and
-// unauthenticated on purpose (a visitor hits these before login succeeds),
-// so unlike every other admin-adjacent call here, no user_profile/query
-// params are sent.
-export async function getBackendActivationStatus(): Promise<BackendActivationStatusResponse> {
-  const response = await fetch(`${API_BASE_URL}/v1/auth/backend-activation/status`);
-
-  if (!response.ok) {
-    await parseErrorAndThrow(response);
-  }
-  return (await response.json()) as BackendActivationStatusResponse;
-}
-
+// Phase 21 - hrb_chatbot_service's own Phase 284 route. Public and
+// unauthenticated on purpose (fired right after a successful login,
+// before the visitor has any other way to prove identity to this
+// route), so unlike every other admin-adjacent call here, no
+// user_profile/query params are sent. Phase 26 removed this file's own
+// getBackendActivationStatus() (the pre-check that used to gate
+// AwsActivationWait) as dead code - LoginPage.tsx now fires this resume
+// call directly, fire-and-forget, without checking status first.
 export async function resumeBackendActivation(): Promise<BackendActivationStatusResponse> {
   const response = await fetch(`${API_BASE_URL}/v1/auth/backend-activation/resume`, {
     method: "POST",
@@ -1595,7 +1590,7 @@ export async function signOut(employeeId: string, tabSessionId?: string): Promis
 
 // Phase 22 (hrb_chatbot_service's own Phase 285) - Explainability modal's
 // Testing Strategy tab, up to 10 real sample rows per dataset. Public and
-// unauthenticated, same as getBackendActivationStatus() above - no
+// unauthenticated, same as resumeBackendActivation() above - no
 // employee_id/full_name/role params, unlike most other calls in this file.
 export async function getTestingStrategySample<T>(dataset: TestingStrategyDataset): Promise<TestingStrategySampleResponse<T>> {
   const response = await fetch(`${API_BASE_URL}/v1/explainability/testing-strategy/${dataset}/sample`);
