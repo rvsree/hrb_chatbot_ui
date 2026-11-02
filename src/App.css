@@ -2348,6 +2348,12 @@ button.doc-link-popover-item:hover {
    inventing a new table style for one-off use. */
 .sample-login-grid {
   width: 100%;
+  /* Phase 50 - without this, the table (and the .help-popover around it,
+     which sizes via width: max-content) just shrink-wraps to its own
+     narrow content - raising POPOVER_MAX_WIDTH alone never forces growth,
+     it only raises a ceiling nothing was hitting. Same role
+     .documents-table's own min-width: 640px already plays there. */
+  min-width: 480px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
@@ -2375,8 +2381,12 @@ button.doc-link-popover-item:hover {
 
 /* Phase 49 - a REAL 3 text-lines at this popover's own 13px/1.5 line-height
    (3 x 19.5px = 58.5px, rounded to 59px) - Phase 48's `3em` (39px) was
-   shorter than 3 lines, not 3 of them, which is why it didn't read as such. */
-.sample-login-doc-link {
+   shorter than 3 lines, not 3 of them, which is why it didn't read as such.
+   Phase 50 - qualified with .help-popover-body p (specificity 0,2,1) -
+   plain .sample-login-doc-link (0,1,0) was silently losing to
+   .help-popover-body p's own `margin: 0` (0,1,1) above, regardless of
+   source order, so this never actually rendered at all. */
+.help-popover-body p.sample-login-doc-link {
   margin-top: 59px;
 }
 

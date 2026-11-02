@@ -29,6 +29,7 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 47 | Fix left/right composer link columns sitting at mismatched vertical heights | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 48 | "Sample login" popover: real grid, wider popover, 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 49 | "Sample login" popover: more width/height, "Emp ID" column rename, a true 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 50 | Fix 2 real bugs in Phase 49: the link gap and width increase neither actually applied | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -710,3 +711,13 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** touching `.help-popover-body`'s own shared padding (would affect every popover app-wide, not just this one).
     - **Open questions:** none.
   - **Built and verified:** `POPOVER_MAX_WIDTH` 680 -> 760 (+ matching CSS fallback). `.sample-login-grid` cell padding `8px 10px` -> `10px 14px`. `.sample-login-doc-link` `margin-top` `3em` -> `59px`. `<th>Employee ID</th>` -> `<th>Emp ID</th>` - confirmed matches the login form's own `<label>` text exactly. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 50 (done) — Fix 2 real bugs in Phase 49's own changes: the link gap never actually applied, and the width increase never actually took effect.** User-reported via screenshot, 2026-11-02: "the gap... still not adjusted, likewise the width and height is not fixed."
+  - **Spec:**
+    - **Context:** both diagnosed directly, not guessed. (1) `.help-popover-body p { margin: 0; }` (specificity 0,1,1) has existed since before this popover did, and `.sample-login-doc-link` (specificity 0,1,0) is *less* specific - it was silently losing to that `margin:0` regardless of source order, the same category of bug as Phase 37's. (2) `.help-popover`'s `width: max-content` sizes the box to its content's own intrinsic width; raising `POPOVER_MAX_WIDTH` only raises a ceiling the content was never hitting - `.sample-login-grid` had `width: 100%` (of its max-content parent, which proves nothing on its own) and no `min-width`, so the box kept shrink-wrapping to the table's narrow natural content width, same as before Phase 49.
+    - **Data/API contracts:** none.
+    - **User-visible behavior:** the grid-to-link gap actually renders now (59px, visibly separating them). The popover actually renders wider, not just newly *allowed* to be wider.
+    - **Implementation shape:** `App.css` - `.sample-login-doc-link` -> `.help-popover-body p.sample-login-doc-link` (specificity 0,2,1, unambiguously above the 0,1,1 rule it was losing to - no reliance on source order this time). `.sample-login-grid` gains `min-width: 480px` (forces real width, same role `.documents-table`'s own `min-width: 640px` already plays there).
+    - **Failure modes:** N/A.
+    - **Open questions:** none.
+  - **Built and verified:** confirmed no other rule in `App.css` outranks the new `.help-popover-body p.sample-login-doc-link` selector (grepped every `.help-popover-body p`/`sample-login-doc-link` hit). `.sample-login-grid` gained `min-width: 480px`. `npm run build`: clean, 69 modules.
