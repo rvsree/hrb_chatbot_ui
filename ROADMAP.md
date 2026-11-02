@@ -32,6 +32,7 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 50 | Fix 2 real bugs in Phase 49: the link gap and width increase neither actually applied | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 51 | Memory/Resiliency Settings tabs visible to every role, read-only; editing stays admin-only | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 52 | Reword the empty-chat message to point at Sample Queries, as a clickable inline link | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 53 | Fix IdleSessionGuard's countdown: the warning effect was killing its own just-created timers on every render | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -745,3 +746,14 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** changing the Sample Queries modal's own content/behavior - only this empty-state message and its new link.
     - **Open questions:** none.
   - **Built and verified:** `ChatPage.tsx`'s empty state now reads "Ask a question about HR benefits to start the conversation, or try one of the **Sample Queries** below." with a real `link-button` opening the modal. New `.empty-state .link-button { font-size: inherit; }`. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 53 (done) — Fix IdleSessionGuard's countdown: the warning effect was killing its own just-created timers on every render.** User-reported via screenshot, 2026-11-02: "the timer is not running, whereas the timeout message stays static."
+  - **Spec:**
+    - **Context:** root cause traced directly, not guessed. The main `useEffect` had `[showWarning]` as its dependency. The instant `showWarningNow()` calls `setShowWarning(true)`, React re-runs that effect: cleanup fires first (`clearAllTimers()`), which kills the countdown `setInterval` and the logout `setTimeout` *moments after `showWarningNow()` itself created them*, then the effect body re-runs and calls `scheduleWarning()` again - rescheduling a fresh 9-minute wait instead of continuing the active 60-second countdown. The dialog showed "60 seconds" once and then nothing ever decremented it or auto-logged-out, because both timers driving that were destroyed almost immediately after being created.
+    - **Data/API contracts:** none - client-side timer logic only.
+    - **User-visible behavior:** the "signed out in N seconds" countdown now actually ticks down every second, and auto-logout at 0 actually fires - same behavior this phase always intended, now actually working.
+    - **Implementation shape:** new `showWarningRef` (a ref mirroring `showWarning` via a separate, trivial `useEffect([showWarning])` that does nothing but keep the ref in sync - cheap, doesn't re-attach listeners). `handleActivity()` reads `showWarningRef.current` instead of closing over `showWarning` directly. The main effect's dependency array becomes `[]` - it now runs exactly once on mount, attaching listeners and scheduling the first warning a single time, and only `extendSession()`/`doLogout()`/the countdown's own interval ever touch the timers afterward - never the effect itself re-running.
+    - **Failure modes:** N/A - pure client-side timer logic, same fail-open behavior as before (worst case, the guard simply never fires).
+    - **Out of scope:** none - this is a bug fix for already-spec'd (Phase 35) behavior, not new scope.
+    - **Open questions:** none.
+  - **Built and verified:** new `showWarningRef` kept in sync by its own tiny effect; `handleActivity()` reads the ref instead of closing over `showWarning`; the main effect's dependency array is now `[]`. `npm run build`: clean, 69 modules.

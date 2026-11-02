@@ -28,6 +28,10 @@ export default function IdleSessionGuard() {
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastResetRef = useRef(0);
+  // Phase 53 - lets handleActivity() read the current value without being
+  // in the main effect's dependency array (see below for why that effect
+  // must run only once).
+  const showWarningRef = useRef(false);
   // Avoids calling logout() (and its own fire-and-forget sign-out
   // request) twice if both the countdown's own setTimeout and an
   // explicit "No" click land in the same tick.
@@ -72,6 +76,15 @@ export default function IdleSessionGuard() {
     scheduleWarning();
   }
 
+  // Phase 53 - keeps showWarningRef in sync, cheaply, without the main
+  // effect below needing showWarning in its own dependency array (that
+  // was the real bug: re-running THAT effect on every showWarning change
+  // called clearAllTimers() on the countdown/logout timers moments after
+  // showWarningNow() had just created them).
+  useEffect(() => {
+    showWarningRef.current = showWarning;
+  }, [showWarning]);
+
   useEffect(() => {
     scheduleWarning();
 
@@ -81,7 +94,7 @@ export default function IdleSessionGuard() {
       // choice, not an oversight: the whole point of asking is to
       // confirm a human is actually there, which passive mouse/keyboard
       // noise doesn't establish.
-      if (showWarning) {
+      if (showWarningRef.current) {
         return;
       }
       const now = Date.now();
@@ -101,8 +114,10 @@ export default function IdleSessionGuard() {
       }
       clearAllTimers();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- showWarning read inside the listener via closure is intentional; re-running this effect on every change would re-attach listeners needlessly
-  }, [showWarning]);
+    // Runs exactly once on mount now - see the comment above for why this
+    // must never re-run on showWarning changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!showWarning) {
     return null;
