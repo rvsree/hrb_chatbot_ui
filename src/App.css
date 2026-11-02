@@ -684,38 +684,11 @@ button.conversation-item:hover {
   gap: 8px;
 }
 
-/* Phase 216 - Settings' own 3-tab strip (RAG Search/RAG Config/Model),
-   nested inside .tuning-bar so its labels/selects/inputs inherit that
-   scope's styling; only the tab row + panel spacing are new here. */
-.settings-tab-row {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
-}
-
-.settings-tab,
-.settings-tab-active {
-  flex: 1;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 6px 4px;
-  /* 2026-10-18 - was var(--border) on both states, too subtle to tell the
-     3 tabs apart at rest; border-strong gives every tab a visible frame,
-     not just the active one. */
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm, 6px);
-  background: var(--surface);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.settings-tab-active {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  border-color: var(--accent);
-}
-
+/* Phase 216 - Settings' own tab panel, nested inside .tuning-bar so its
+   labels/selects/inputs inherit that scope's styling. Phase 36 - the tab
+   row itself switched to the shared .tab-strip/.tab-strip-button classes
+   (Explainability/Admin/Finops' own convention) - only this panel spacing
+   is still Settings-specific. */
 .settings-tab-panel {
   display: flex;
   flex-direction: column;

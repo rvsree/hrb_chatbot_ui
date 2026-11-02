@@ -869,24 +869,24 @@ export default function ChatPage() {
             model + LLM judge model). Replaces the single flat "tuning-bar"
             these used to share. */}
         <div className="tuning-bar settings-tabs-bar">
-          <div className="settings-tab-row">
+          <div className="tab-strip">
             <button
               type="button"
-              className={settingsTab === "rag-search" ? "settings-tab-active" : "settings-tab"}
+              className={settingsTab === "rag-search" ? "tab-strip-button-active" : "tab-strip-button"}
               onClick={() => setSettingsTab("rag-search")}
             >
               RAG Search
             </button>
             <button
               type="button"
-              className={settingsTab === "rag-config" ? "settings-tab-active" : "settings-tab"}
+              className={settingsTab === "rag-config" ? "tab-strip-button-active" : "tab-strip-button"}
               onClick={() => setSettingsTab("rag-config")}
             >
               RAG Config
             </button>
             <button
               type="button"
-              className={settingsTab === "model" ? "settings-tab-active" : "settings-tab"}
+              className={settingsTab === "model" ? "tab-strip-button-active" : "tab-strip-button"}
               onClick={() => setSettingsTab("model")}
             >
               Model
@@ -899,14 +899,14 @@ export default function ChatPage() {
               <>
                 <button
                   type="button"
-                  className={settingsTab === "memory" ? "settings-tab-active" : "settings-tab"}
+                  className={settingsTab === "memory" ? "tab-strip-button-active" : "tab-strip-button"}
                   onClick={() => setSettingsTab("memory")}
                 >
                   Memory
                 </button>
                 <button
                   type="button"
-                  className={settingsTab === "resiliency" ? "settings-tab-active" : "settings-tab"}
+                  className={settingsTab === "resiliency" ? "tab-strip-button-active" : "tab-strip-button"}
                   onClick={() => setSettingsTab("resiliency")}
                 >
                   Resiliency
