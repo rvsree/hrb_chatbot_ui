@@ -26,6 +26,8 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 44 | Repoint both "Learn more" links to the new, shorter README anchor after the Mermaid diagram was replaced with a designed SVG | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 45 | "GenAI Chat Workflow" always visible; checkbox now drives RAG Pipeline instead of being gated by it | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 46 | IndexedKbDocumentsModal: explicit scroll container for the table, more visible height | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 47 | Fix left/right composer link columns sitting at mismatched vertical heights | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 48 | "Sample login" popover: real grid, wider popover, 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -674,3 +676,25 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** further widening `.indexed-kb-modal` itself (Phase 42 already sized it at 1000px) - this phase only changes the table's own scroll behavior and visible height.
     - **Open questions:** none.
   - **Built and verified:** `<table>` wrapped in new `.indexed-kb-table-wrapper`. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 47 (done) — Fix left/right composer link columns sitting at mismatched vertical heights.** User-reported via screenshot, 2026-11-02: left (GenAI Chat Workflow/Request Leave) and right (Sample Queries/Indexed KB Documents/Chatbot Features) columns visibly don't line up.
+  - **Spec:**
+    - **Context:** root cause found, not guessed - `.composer-left-links` has `margin-bottom: 14px`, `.composer-right-links` has `margin-bottom: 74px` (Phase 39 raised it, per a separate, earlier "move these 2 links up" request, without checking it against the left column, which didn't exist yet at the time). Both columns inherit `.composer`'s `align-items: flex-end`, so each one's own bottom edge anchors to the same row baseline - the 60px gap between the 2 margin values is what visibly separates them. This whole approach (hand-tuned margin-bottom per side) is fragile by construction - it was never actually checked against the opposite side, twice now.
+    - **Data/API contracts:** none - CSS only.
+    - **User-visible behavior:** both columns vertically centered against the full composer row height (set by the tall `rows={4}` textarea) via `align-self: center`, replacing the mismatched margin-bottom hack on both sides - robust to either column's content height changing later, not re-tuned pixel values.
+    - **Implementation shape:** `App.css` - `.composer-left-links` and `.composer-right-links` both gain `align-self: center`; both `margin-bottom` declarations removed.
+    - **Failure modes:** N/A.
+    - **Out of scope:** restyling `.composer-adhoc-toggle` vs `.composer-text-button` to look more alike (checked - both are already same-height, bordered "chip" controls at the same left edge; the visible issue was vertical column height, not their own shape).
+    - **Open questions:** none.
+  - **Built and verified:** both margin-bottom hacks removed, `align-self: center` added to both columns. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 48 (done) — "Sample login" popover: real grid instead of 3 run-on sentences; wider popover; 3-line gap before "Project documentation."** User-directed, 2026-11-02, from a screenshot.
+  - **Spec:**
+    - **Context:** `LoginPage.tsx`'s "Sample login" popover currently renders each persona as one sentence ("**Employee** - Employee ID: **EMP052**, Emp Name: **Eddy Employee** [copy]") - hard to scan 3 of across. `HelpPopover.tsx`'s `POPOVER_MAX_WIDTH` (600) is a shared ceiling used by every popover in the app, not just this one - raising it doesn't force other, shorter popovers wider (the CSS is `width: max-content; max-width: <cap>`), so it's safe to bump for everyone.
+    - **Data/API contracts:** none - same `ALL_SAMPLE_PERSONAS`/`SAMPLE_PERSONA_LABELS` data, same `CopyButton` fill-the-form-and-close behavior.
+    - **User-visible behavior:** the 3 personas render as a real table - Role / Employee ID / Emp Name / Copy columns - instead of 3 sentences. The popover's shared max-width ceiling rises 600px -> 680px (every other popover in the app keeps shrinking to its own content, unaffected). A 3-line gap (`margin-top: 3em`, the exact value `.login-sample-credentials-link` already uses for its own "3 blank lines" spacing above the Sign In button - same established convention, not a new number) separates the grid from "Project documentation" below it.
+    - **Implementation shape:** `LoginPage.tsx` - the `.map()` over `ALL_SAMPLE_PERSONAS` becomes a `<table className="sample-login-grid">` with a header row; the "Project documentation" `<p>` gains `className="sample-login-doc-link"`. `HelpPopover.tsx` - `POPOVER_MAX_WIDTH` 600 -> 680. `App.css` - matching `.help-popover`'s fallback `max-width` 600px -> 680px (kept equal to the JS constant on purpose, per that rule's own existing comment - avoids a resize flash on first paint); new `.sample-login-grid` (table styling, reusing this app's existing `.documents-table`-style header/cell look, not inventing a new one) and `.sample-login-doc-link { margin-top: 3em; }`.
+    - **Failure modes:** N/A.
+    - **Out of scope:** adding a per-instance max-width override to `HelpPopover` - the shared ceiling bump is enough here, and a new prop just for this one call site is more API surface than this warrants.
+    - **Open questions:** none.
+  - **Built and verified:** `LoginPage.tsx`'s persona list is now a `<table className="sample-login-grid">`. `HelpPopover.tsx`'s `POPOVER_MAX_WIDTH` 600 -> 680; `App.css`'s matching fallback updated to the same value. New `.sample-login-grid` (reuses `.documents-table`'s own header/cell look) and `.sample-login-doc-link { margin-top: 3em; }`. `npm run build`: clean, 69 modules.

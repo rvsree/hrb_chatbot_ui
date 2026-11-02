@@ -340,26 +340,41 @@ export default function LoginPage() {
         <HelpPopover label="Sample login" triggerContent="Need sample login credentials?" triggerClassName="link-button login-sample-credentials-link">
           {(closePopover) => (
             <>
-              {ALL_SAMPLE_PERSONAS.map((persona) => (
-                <p key={persona.role}>
-                  <strong>{SAMPLE_PERSONA_LABELS[persona.role]}</strong> - Employee ID: <strong>{persona.employeeId}</strong>,
-                  Emp Name: <strong>{persona.fullName}</strong>{" "}
-                  <CopyButton
-                    text={`${persona.employeeId} / ${persona.fullName}`}
-                    label={`${SAMPLE_PERSONA_LABELS[persona.role]} sample identity`}
-                    onCopied={() => {
-                      setEmployeeId(persona.employeeId);
-                      setFullName(persona.fullName);
-                      handleRoleChange(persona.role);
-                      // Phase 29 - user-reported: picking a persona filled
-                      // the form correctly, but the popover itself stayed
-                      // open - close it now that there's nothing left to do.
-                      closePopover();
-                    }}
-                  />
-                </p>
-              ))}
-              <p>
+              <table className="sample-login-grid">
+                <thead>
+                  <tr>
+                    <th>Role</th>
+                    <th>Employee ID</th>
+                    <th>Emp Name</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ALL_SAMPLE_PERSONAS.map((persona) => (
+                    <tr key={persona.role}>
+                      <td>{SAMPLE_PERSONA_LABELS[persona.role]}</td>
+                      <td>{persona.employeeId}</td>
+                      <td>{persona.fullName}</td>
+                      <td>
+                        <CopyButton
+                          text={`${persona.employeeId} / ${persona.fullName}`}
+                          label={`${SAMPLE_PERSONA_LABELS[persona.role]} sample identity`}
+                          onCopied={() => {
+                            setEmployeeId(persona.employeeId);
+                            setFullName(persona.fullName);
+                            handleRoleChange(persona.role);
+                            // Phase 29 - user-reported: picking a persona filled
+                            // the form correctly, but the popover itself stayed
+                            // open - close it now that there's nothing left to do.
+                            closePopover();
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="sample-login-doc-link">
                 <a
                   href="https://github.com/rvsree/hrb_emp_assist/blob/master/README.md#new-here-trying-the-live-demo"
                   target="_blank"

@@ -1049,16 +1049,18 @@ button.conversation-item:hover {
   height: 36px;
 }
 
-/* Phase 38 - stacks GenAI Chat Workflow above Request Leave, mirroring
-   .composer-right-links' own gap/margin-bottom on the opposite side. */
+/* Phase 38 - stacks GenAI Chat Workflow above Request Leave. Phase 47 -
+   align-self: center (not a hand-tuned margin-bottom, which drifted out
+   of sync with .composer-right-links twice) vertically centers this
+   column against the full composer row height, same as that column. */
 .composer-left-links {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
+  align-self: center;
   gap: 16px;
-  margin-bottom: 14px;
 }
 
 /* Phase 30 - "Sample Queries"/"Indexed KB Documents"/"Chatbot Features"
@@ -1072,16 +1074,13 @@ button.conversation-item:hover {
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
-  /* User-directed - the 2px gap read as the links nearly overlapping,
-     flush against the box's bottom border. margin-bottom lifts the whole
-     column off that border; the gap on top of it is what actually
-     separates each link from the next. Phase 39 - margin-bottom raised
-     14px -> 74px (+~3 line-heights) to move "Sample Queries"/"Indexed KB
-     Documents" further up, per a direct request - the 3rd link
-     ("Chatbot Features") rides along with the same lift, unchanged
-     relative to the other two. */
+  /* Phase 47 - align-self: center replaces the hand-tuned margin-bottom
+     this used to carry (14px, then 74px) - that approach never actually
+     checked itself against .composer-left-links' own height, and the 2
+     drifted apart once both existed. This centers against the full
+     composer row height instead, same mechanism as that column now uses. */
+  align-self: center;
   gap: 16px;
-  margin-bottom: 74px;
 }
 
 /* 2026-10-30 - "Enable GenAI Chat Workflow" checkbox, moved here from
@@ -1635,11 +1634,12 @@ button.conversation-item:hover {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   width: max-content;
-  /* 2026-10-19 - matches HelpPopover.tsx's own POPOVER_MAX_WIDTH (600,
-     widened twice now - user-reported, too vertical/cramped). This CSS
-     value is just the fallback before JS sets the real inline maxWidth;
-     keeping them equal avoids a visible resize flash on first paint. */
-  max-width: 600px;
+  /* 2026-10-19 - matches HelpPopover.tsx's own POPOVER_MAX_WIDTH (widened
+     3 times now, most recently to 680 - user-reported, too vertical/
+     cramped). This CSS value is just the fallback before JS sets the
+     real inline maxWidth; keeping them equal avoids a visible resize
+     flash on first paint. */
+  max-width: 680px;
   max-height: 60vh;
   z-index: 2000;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
@@ -2341,6 +2341,42 @@ button.doc-link-popover-item:hover {
 
 .documents-table tr:last-child td {
   border-bottom: none;
+}
+
+/* Phase 48 - LoginPage's "Sample login" popover, reusing .documents-table's
+   own header/cell look (accent header row, bottom-ruled cells) rather than
+   inventing a new table style for one-off use. */
+.sample-login-grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.sample-login-grid th {
+  text-align: left;
+  color: var(--accent-contrast);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--accent);
+  padding: 8px 10px;
+}
+
+.sample-login-grid td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sample-login-grid tr:last-child td {
+  border-bottom: none;
+}
+
+/* Same "3 blank lines" spacing convention .login-sample-credentials-link
+   already uses above the Sign In button - reused value, not a new one. */
+.sample-login-doc-link {
+  margin-top: 3em;
 }
 
 .documents-table tr:hover td {
