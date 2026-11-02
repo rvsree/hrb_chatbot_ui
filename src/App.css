@@ -582,6 +582,14 @@ button.conversation-item:hover {
   margin-top: 40px;
 }
 
+/* Phase 52 - .link-button's own font-size: 12px would read visibly
+   smaller than the rest of this sentence - its other call sites are all
+   already-small-text contexts (composer links, message bubbles), this
+   one isn't. */
+.empty-state .link-button {
+  font-size: inherit;
+}
+
 .mode-select-corner {
   display: flex;
   align-items: center;

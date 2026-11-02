@@ -1508,7 +1508,15 @@ export default function ChatPage() {
                 <span className="typing-dot" />
               </div>
             )}
-            {!activeConversation && <p className="empty-state">Ask a question about HR benefits to start.</p>}
+            {!activeConversation && (
+              <p className="empty-state">
+                Ask a question about HR benefits to start the conversation, or try one of the{" "}
+                <button type="button" className="link-button" onClick={() => setShowSampleQueriesModal(true)}>
+                  Sample Queries
+                </button>{" "}
+                below.
+              </p>
+            )}
             <div ref={bottomRef} />
           </div>
         </div>

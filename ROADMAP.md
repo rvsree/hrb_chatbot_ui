@@ -31,6 +31,7 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 49 | "Sample login" popover: more width/height, "Emp ID" column rename, a true 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 50 | Fix 2 real bugs in Phase 49: the link gap and width increase neither actually applied | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 51 | Memory/Resiliency Settings tabs visible to every role, read-only; editing stays admin-only | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 52 | Reword the empty-chat message to point at Sample Queries, as a clickable inline link | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -733,3 +734,14 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** the Model tab's `judge_provider_default` field - stays admin-only, gate untouched (not part of this ask).
     - **Open questions:** none.
   - **Built and verified:** `SettingsPanel.tsx` - new `readOnly` prop, hides Save/message and adds `|| readOnly` to the input's own `disabled`. `ChatPage.tsx` - `currentIdentity.role === "admin" &&` removed from the tab-button fragment and both panel conditions; all 7 `SettingField`s across the 2 panels now pass `readOnly={currentIdentity.role !== "admin"}`. `npm run build`: clean, 69 modules. `npm run lint`: no new warnings in either touched file.
+
+- [x] **Phase 52 (done) — Reword the empty-chat message to point at Sample Queries, as a clickable inline link.** User-directed, 2026-11-02 - clarified first (per the user's own request) whether "Sample Queries" should be a clickable link vs. plain text, and whether to review wording before implementing; user chose clickable link, review-wording-first, then picked between 2 proposed options.
+  - **Spec:**
+    - **Context:** `ChatPage.tsx`'s `!activeConversation` empty state currently reads "Ask a question about HR benefits to start." - a dead end for a first-time visitor who doesn't know what to ask, with no pointer to the existing Sample Queries feature at all.
+    - **Data/API contracts:** none - static copy + reuses the existing `setShowSampleQueriesModal(true)` call every other "Sample Queries" trigger in this app already uses.
+    - **User-visible behavior:** the empty-state message becomes "Ask a question about HR benefits to start the conversation, or try one of the **Sample Queries** below." - "Sample Queries" is a real clickable link (opens the same modal the composer's own "Sample Queries" link opens), not just descriptive text.
+    - **Implementation shape:** `ChatPage.tsx` - the `<p className="empty-state">` text is replaced with the new sentence, with an inline `<button type="button" className="link-button" onClick={() => setShowSampleQueriesModal(true)}>Sample Queries</button>` in place of the bolded phrase. `App.css` - new `.empty-state .link-button { font-size: inherit; }` (`.link-button`'s own default `font-size: 12px` would otherwise read visibly smaller than the surrounding sentence here, unlike its other, already-small-text call sites).
+    - **Failure modes:** N/A - static content + an already-proven modal-open call.
+    - **Out of scope:** changing the Sample Queries modal's own content/behavior - only this empty-state message and its new link.
+    - **Open questions:** none.
+  - **Built and verified:** `ChatPage.tsx`'s empty state now reads "Ask a question about HR benefits to start the conversation, or try one of the **Sample Queries** below." with a real `link-button` opening the modal. New `.empty-state .link-button { font-size: inherit; }`. `npm run build`: clean, 69 modules.
