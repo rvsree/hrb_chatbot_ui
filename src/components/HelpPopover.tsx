@@ -12,14 +12,14 @@ import { createPortal } from "react-dom";
 // live: .modal-card's own overflow-y: auto implicitly clips overflow-x too,
 // a CSS spec rule, not a bug in this project's own code).
 
-// 2026-10-19 - widened 3 times now (360 -> 480 -> 600 -> 680): user-
-// reported, content read as too vertical/cramped (600 -> 680, Phase 48,
-// specifically to give LoginPage's "Sample login" grid room). Still
-// clamped to its bounding frame in getPopoverBounds() below, so this is a
-// ceiling, not a guarantee - a narrow tab panel still shrinks it, and
-// every other (shorter) popover in the app is unaffected since the CSS
-// is `width: max-content; max-width: <this>`.
-const POPOVER_MAX_WIDTH = 680;
+// 2026-10-19 - widened 4 times now (360 -> 480 -> 600 -> 680 -> 760): user-
+// reported, content read as too vertical/cramped (600 -> 680 -> 760,
+// Phases 48-49, specifically to give LoginPage's "Sample login" grid
+// room). Still clamped to its bounding frame in getPopoverBounds() below,
+// so this is a ceiling, not a guarantee - a narrow tab panel still
+// shrinks it, and every other (shorter) popover in the app is unaffected
+// since the CSS is `width: max-content; max-width: <this>`.
+const POPOVER_MAX_WIDTH = 760;
 const POPOVER_VIEWPORT_MARGIN = 8;
 
 // 2026-10-19 - user-directed (round 2): within the Explainability modal,

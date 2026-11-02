@@ -28,6 +28,7 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 46 | IndexedKbDocumentsModal: explicit scroll container for the table, more visible height | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 47 | Fix left/right composer link columns sitting at mismatched vertical heights | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 48 | "Sample login" popover: real grid, wider popover, 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 49 | "Sample login" popover: more width/height, "Emp ID" column rename, a true 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -698,3 +699,14 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** adding a per-instance max-width override to `HelpPopover` - the shared ceiling bump is enough here, and a new prop just for this one call site is more API surface than this warrants.
     - **Open questions:** none.
   - **Built and verified:** `LoginPage.tsx`'s persona list is now a `<table className="sample-login-grid">`. `HelpPopover.tsx`'s `POPOVER_MAX_WIDTH` 600 -> 680; `App.css`'s matching fallback updated to the same value. New `.sample-login-grid` (reuses `.documents-table`'s own header/cell look) and `.sample-login-doc-link { margin-top: 3em; }`. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 49 (done) — "Sample login" popover: more width/height, "Emp ID" column rename, a true 3-line gap.** User-directed, 2026-11-02.
+  - **Spec:**
+    - **Context:** `3em` (Phase 48) is 39px at this popover's 13px font - shorter than 3 real text lines at this project's own 1.5 line-height (3 x 19.5px = 58.5px), which is likely why it didn't read as "3 lines." The column header said "Employee ID" while the actual login form field's own label (`LoginPage.tsx`) says "Emp ID" - a real, confirmed inconsistency, not just a style nit. For "more height," widening the shared `POPOVER_MAX_WIDTH` ceiling again is safe (Phase 48 already established this doesn't force other, shorter popovers wider) - but bumping `.help-popover-body`'s own padding would NOT be safe the same way, since padding (unlike a max-width ceiling) applies its exact value to every popover in the app, not just this one. Height instead comes from 2 changes scoped only to this popover's own content: roomier grid-cell padding and the corrected link gap.
+    - **Data/API contracts:** none.
+    - **User-visible behavior:** popover width ceiling 680px -> 760px. Grid cell padding increased for more breathing room (taller rows). Header column "Employee ID" -> "Emp ID," matching the login form's own label exactly. Gap before "Project documentation" becomes a real 3 text-lines (~59px), not 3em.
+    - **Implementation shape:** `HelpPopover.tsx` - `POPOVER_MAX_WIDTH` 680 -> 760. `App.css` - matching fallback `max-width` 680px -> 760px; `.sample-login-grid th`/`td` padding `8px 10px` -> `10px 14px`; `.sample-login-doc-link` `margin-top: 3em` -> `margin-top: 59px` (3 x this popover's own 19.5px line-height), with a comment recording the math. `LoginPage.tsx` - the grid's `<th>Employee ID</th>` -> `<th>Emp ID</th>`.
+    - **Failure modes:** N/A.
+    - **Out of scope:** touching `.help-popover-body`'s own shared padding (would affect every popover app-wide, not just this one).
+    - **Open questions:** none.
+  - **Built and verified:** `POPOVER_MAX_WIDTH` 680 -> 760 (+ matching CSS fallback). `.sample-login-grid` cell padding `8px 10px` -> `10px 14px`. `.sample-login-doc-link` `margin-top` `3em` -> `59px`. `<th>Employee ID</th>` -> `<th>Emp ID</th>` - confirmed matches the login form's own `<label>` text exactly. `npm run build`: clean, 69 modules.

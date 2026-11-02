@@ -1635,11 +1635,11 @@ button.conversation-item:hover {
   border-radius: 8px;
   width: max-content;
   /* 2026-10-19 - matches HelpPopover.tsx's own POPOVER_MAX_WIDTH (widened
-     3 times now, most recently to 680 - user-reported, too vertical/
+     4 times now, most recently to 760 - user-reported, too vertical/
      cramped). This CSS value is just the fallback before JS sets the
      real inline maxWidth; keeping them equal avoids a visible resize
      flash on first paint. */
-  max-width: 680px;
+  max-width: 760px;
   max-height: 60vh;
   z-index: 2000;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
@@ -2361,11 +2361,11 @@ button.doc-link-popover-item:hover {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   background: var(--accent);
-  padding: 8px 10px;
+  padding: 10px 14px;
 }
 
 .sample-login-grid td {
-  padding: 8px 10px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -2373,10 +2373,11 @@ button.doc-link-popover-item:hover {
   border-bottom: none;
 }
 
-/* Same "3 blank lines" spacing convention .login-sample-credentials-link
-   already uses above the Sign In button - reused value, not a new one. */
+/* Phase 49 - a REAL 3 text-lines at this popover's own 13px/1.5 line-height
+   (3 x 19.5px = 58.5px, rounded to 59px) - Phase 48's `3em` (39px) was
+   shorter than 3 lines, not 3 of them, which is why it didn't read as such. */
 .sample-login-doc-link {
-  margin-top: 3em;
+  margin-top: 59px;
 }
 
 .documents-table tr:hover td {

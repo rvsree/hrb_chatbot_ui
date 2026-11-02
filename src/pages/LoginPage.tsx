@@ -344,7 +344,7 @@ export default function LoginPage() {
                 <thead>
                   <tr>
                     <th>Role</th>
-                    <th>Employee ID</th>
+                    <th>Emp ID</th>
                     <th>Emp Name</th>
                     <th></th>
                   </tr>
