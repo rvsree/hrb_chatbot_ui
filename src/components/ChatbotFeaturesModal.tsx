@@ -95,6 +95,46 @@ const CORE_CAPABILITIES: CoreCapability[] = [
   },
 ];
 
+// Phase 40 - user-directed: the "Grow the knowledge base" capability above
+// mentions ingestion in one sentence, but nowhere explains it as a
+// separate process from retrieval, or that retrieval depends on it having
+// already happened. These 2 boxes make that dependency explicit.
+interface ProcessBox {
+  title: string;
+  steps: string[];
+  note: string;
+}
+
+const HOW_IT_WORKS_TITLE = "How Your Questions Get Answered";
+const HOW_IT_WORKS_INTRO =
+  "Two separate processes make this possible - one happens before you ever ask a question, the other happens every single time you do.";
+
+const INGESTION_BOX: ProcessBox = {
+  title: "1. Ingestion - happens once, before you ever ask",
+  steps: [
+    "A document is uploaded (HR Support role only)",
+    "Its text is extracted from the file",
+    "The text is split into smaller chunks",
+    "Each chunk is embedded - turned into a vector",
+    "Every chunk's vector is stored in the vector database",
+  ],
+  note: "This is what \"Grow the knowledge base\" above does. No question is being answered yet at this point.",
+};
+
+const RETRIEVAL_BOX: ProcessBox = {
+  title: "2. Retrieval - happens every time you ask",
+  steps: [
+    "Your question is embedded the same way a chunk was",
+    "The vector database is searched for the closest-matching chunks",
+    "Those chunks, plus your question, are sent to the AI model",
+    "The model writes an answer grounded in just those chunks",
+  ],
+  note: "This is what runs behind every policy question you ask in this chat.",
+};
+
+const INGESTION_RETRIEVAL_DEPENDENCY_NOTE =
+  "Retrieval can only find what Ingestion already put there - a question about a document that was never indexed won't be answerable this way (that's what \"Ask about a file you attach\" above is for instead).";
+
 const GETTING_STARTED_SECTION: FeaturesSection = {
   title: "Getting Started",
   paragraphs: [
@@ -135,6 +175,20 @@ function renderSection(section: FeaturesSection) {
           </a>
         </p>
       )}
+    </div>
+  );
+}
+
+function renderProcessBox(box: ProcessBox) {
+  return (
+    <div key={box.title} className="feature-capability process-box">
+      <p className="feature-capability-title">{box.title}</p>
+      <ol>
+        {box.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <p className="dev-note-inline">{box.note}</p>
     </div>
   );
 }
@@ -182,6 +236,16 @@ export default function ChatbotFeaturesModal({ onClose, onSelect }: ChatbotFeatu
                 )}
               </div>
             ))}
+          </div>
+
+          <div className="feature-section-card">
+            <h3>{HOW_IT_WORKS_TITLE}</h3>
+            <p>{HOW_IT_WORKS_INTRO}</p>
+            <div className="process-box-row">
+              {renderProcessBox(INGESTION_BOX)}
+              {renderProcessBox(RETRIEVAL_BOX)}
+            </div>
+            <p className="dev-note-inline">{INGESTION_RETRIEVAL_DEPENDENCY_NOTE}</p>
           </div>
 
           {renderSection(GETTING_STARTED_SECTION)}

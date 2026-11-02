@@ -22,6 +22,7 @@ import ExplainabilityModal from "../components/ExplainabilityModal";
 import FeedbackModal from "../components/FeedbackModal";
 import HelpPopover from "../components/HelpPopover";
 import ChatbotFeaturesModal from "../components/ChatbotFeaturesModal";
+import IndexedKbDocumentsModal from "../components/IndexedKbDocumentsModal";
 import MessageBubble from "../components/MessageBubble";
 import SampleQueriesModal from "../components/SampleQueriesModal";
 import { SettingField } from "../components/SettingsPanel";
@@ -311,6 +312,9 @@ export default function ChatPage() {
   // Phase 30 - "Chatbot Features" link right below it - an intro/overview
   // instead of clickable examples.
   const [showChatbotFeaturesModal, setShowChatbotFeaturesModal] = useState(false);
+  // Phase 39 - "Indexed KB Documents" - a read-only view of what's actually
+  // indexed, open to every role (hrb_chatbot_service's own Phase 291).
+  const [showIndexedKbDocumentsModal, setShowIndexedKbDocumentsModal] = useState(false);
   const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1599,76 +1603,85 @@ export default function ChatPage() {
         )}
 
         <form className="composer" onSubmit={handleSend}>
-          {/* Phase 28 - user-directed: Request Leave moved fully outside
-              the gold-bordered composer-row box too, to its left (was
-              inside the box, then the GenAI Chat Workflow toggle was
-              moved outside first - this makes the two consistent). Same
-              hr_support gating carried over unchanged, plus a "?"
-              explaining its purpose, same HelpPopover pattern the GenAI
-              Chat Workflow toggle below already uses. */}
-          {currentIdentity.role !== "hr_support" && (
-            <div className="composer-side-control">
-              <button
-                type="button"
-                className="composer-text-button"
-                title="Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability - routed to a human HR specialist to review. Switches to Multi-Agent RAG if needed."
-                onClick={handleRequestUnpaidLeaveClick}
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" />
-                  <line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-                Request Leave
-              </button>
-              <HelpPopover label="What is Request Leave?">
-                <p>
-                  Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability -
-                  routed to a human HR specialist to review, not answered by the chatbot itself. Switches to
-                  Multi-Agent RAG automatically if a different mode is selected.
-                </p>
-              </HelpPopover>
-            </div>
-          )}
-          {/* 2026-10-30 - user-directed: this sits OUTSIDE the gold-bordered
-              composer-row box (a sibling, not a composer-row child) - the
-              prior placement put it inside the box, which wasn't what was
-              asked. Same genai-rag-only gating carried over unchanged. */}
-          {effectiveMode === "genai-rag" && (
-            <div className="composer-adhoc-toggle" title="Enable GenAI Chat Workflow - attach a file to ask about it directly">
-              <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
-                <input
-                  id="adhoc-chat-enabled-checkbox"
-                  type="checkbox"
-                  checked={adhocChatEnabled}
-                  onChange={(event) => {
-                    setAdhocChatEnabled(event.target.checked);
-                    // Mirrors the mode-switch cleanup above - don't leave files
-                    // attached, hidden, to a feature that's now turned off.
-                    if (!event.target.checked) {
-                      clearAdhocFiles();
-                    }
-                  }}
-                />
-                GenAI Chat Workflow
-              </label>
-              <DocLink featureName="genai-chat-workflow" />
-              <HelpPopover label="What is the GenAI Chat Workflow?">
-                <p>
-                  Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
-                  about it directly, instead of searching the HR knowledge base. The answer is based only on
-                  what's in the file you attached.
-                </p>
-                <p>
-                  Behind the scenes: this skips retrieval from the vector database entirely and reads your file
-                  straight into the model's context. It can also search the web for related information and, if
-                  you ask, email the answer - and it remembers earlier turns in the same attached-file
-                  conversation.
-                </p>
-              </HelpPopover>
-            </div>
-          )}
+          {/* Phase 38 - user-directed: GenAI Chat Workflow stacked above
+              Request Leave, same column treatment .composer-right-links
+              already gives its own 2 links on the opposite side. .composer
+              itself is a flex ROW (align-items: flex-end), so "above" needs
+              a real column wrapper, not just JSX reordering. Either, both,
+              or neither of these 2 may render depending on their own
+              (unchanged) gates - the column holds whatever's actually
+              visible. */}
+          <div className="composer-left-links">
+            {/* 2026-10-30 - user-directed: this sits OUTSIDE the gold-bordered
+                composer-row box (a sibling, not a composer-row child) - the
+                prior placement put it inside the box, which wasn't what was
+                asked. Same genai-rag-only gating carried over unchanged. */}
+            {effectiveMode === "genai-rag" && (
+              <div className="composer-adhoc-toggle" title="Enable GenAI Chat Workflow - attach a file to ask about it directly">
+                <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
+                  <input
+                    id="adhoc-chat-enabled-checkbox"
+                    type="checkbox"
+                    checked={adhocChatEnabled}
+                    onChange={(event) => {
+                      setAdhocChatEnabled(event.target.checked);
+                      // Mirrors the mode-switch cleanup above - don't leave files
+                      // attached, hidden, to a feature that's now turned off.
+                      if (!event.target.checked) {
+                        clearAdhocFiles();
+                      }
+                    }}
+                  />
+                  GenAI Chat Workflow
+                </label>
+                <DocLink featureName="genai-chat-workflow" />
+                <HelpPopover label="What is the GenAI Chat Workflow?">
+                  <p>
+                    Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
+                    about it directly, instead of searching the HR knowledge base. The answer is based only on
+                    what's in the file you attached.
+                  </p>
+                  <p>
+                    Behind the scenes: this skips retrieval from the vector database entirely and reads your file
+                    straight into the model's context, and nothing from it is saved, indexed, or added to the
+                    shared knowledge base afterward. It can also search the web for related information and, if
+                    you ask, email the answer - and it remembers earlier turns in the same attached-file
+                    conversation.
+                  </p>
+                </HelpPopover>
+              </div>
+            )}
+            {/* Phase 28 - user-directed: Request Leave moved fully outside
+                the gold-bordered composer-row box too, to its left. Same
+                hr_support gating carried over unchanged, plus a "?"
+                explaining its purpose, same HelpPopover pattern the GenAI
+                Chat Workflow toggle above already uses. */}
+            {currentIdentity.role !== "hr_support" && (
+              <div className="composer-side-control">
+                <button
+                  type="button"
+                  className="composer-text-button"
+                  title="Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability - routed to a human HR specialist to review. Switches to Multi-Agent RAG if needed."
+                  onClick={handleRequestUnpaidLeaveClick}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  Request Leave
+                </button>
+                <HelpPopover label="What is Request Leave?">
+                  <p>
+                    Request Unpaid Leave, Critical CareGiver Leave, Short-Term Disability, or Long-Term Disability -
+                    routed to a human HR specialist to review, not answered by the chatbot itself. Switches to
+                    Multi-Agent RAG automatically if a different mode is selected.
+                  </p>
+                </HelpPopover>
+              </div>
+            )}
+          </div>
           <div className="composer-row-wrapper">
             <div className="chat-column composer-row">
               <textarea
@@ -1736,7 +1749,10 @@ export default function ChatPage() {
               single unit at the composer's right edge. */}
           <div className="composer-right-links">
             <button type="button" className="link-button" onClick={() => setShowSampleQueriesModal(true)}>
-              Sample queries?
+              Sample Queries
+            </button>
+            <button type="button" className="link-button" onClick={() => setShowIndexedKbDocumentsModal(true)}>
+              Indexed KB Documents
             </button>
             <button type="button" className="link-button" onClick={() => setShowChatbotFeaturesModal(true)}>
               Chatbot Features
@@ -1753,6 +1769,10 @@ export default function ChatPage() {
 
       {showChatbotFeaturesModal && (
         <ChatbotFeaturesModal onClose={() => setShowChatbotFeaturesModal(false)} onSelect={handleSelectSampleQuery} />
+      )}
+
+      {showIndexedKbDocumentsModal && (
+        <IndexedKbDocumentsModal onClose={() => setShowIndexedKbDocumentsModal(false)} userProfile={currentIdentity} />
       )}
 
       {feedbackTarget && <FeedbackModal onClose={() => setFeedbackTarget(null)} onSubmit={applyFeedback} />}
