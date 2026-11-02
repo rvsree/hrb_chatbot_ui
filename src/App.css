@@ -3251,6 +3251,16 @@ table.iqa-kw-table tr:last-child td {
   width: 1000px;
   max-width: 1000px;
 }
+/* Phase 46 - a real, always-on scroll container for the table itself (not
+   just relying on .modal-card's own vertical-only overflow), with more
+   visible height than before. */
+.indexed-kb-table-wrapper {
+  overflow: auto;
+  max-height: 480px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 /* Phase 30 - renamed from .sample-queries-list/.sample-queries-category
    (generic "titled section" layout, nothing query-specific in these 2
    rules) once ChatbotFeaturesModal needed the exact same section look

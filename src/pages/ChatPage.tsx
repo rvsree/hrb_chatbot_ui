@@ -61,6 +61,11 @@ import type {
 // limit the backend doesn't already apply.
 const MAX_QUERY_LENGTH = 2000;
 
+// Phase 157 - user-directed default, was "genai-rag". Phase 45 reuses this
+// same constant as the value the "GenAI Chat Workflow" checkbox resets
+// RAG Pipeline to on uncheck - one source for this default, not two.
+const DEFAULT_CHAT_MODE: ChatMode = "multi-agentic-rag";
+
 const MODE_LABELS: Record<ChatMode, string> = {
   "genai-rag": "Direct RAG",
   "single-agentic-rag": "Reflex Agent",
@@ -220,8 +225,7 @@ export default function ChatPage() {
   // Phase 143: replaces window.confirm() for conversation delete - same
   // reported "browser warning" look as the document-delete confirms.
   const [deleteConversationTarget, setDeleteConversationTarget] = useState<string | null>(null);
-  // Phase 157 - user-directed default, was "genai-rag".
-  const [selectedMode, setSelectedMode] = useState<ChatMode>("multi-agentic-rag");
+  const [selectedMode, setSelectedMode] = useState<ChatMode>(DEFAULT_CHAT_MODE);
   // Phase 141: a separate on/off switch for the ad-hoc document chat
   // feature itself, independent of which RAG Pipeline mode is selected -
   // the attach control only shows when this is checked AND GenAI RAG mode
@@ -935,6 +939,12 @@ export default function ChatPage() {
                     // (see composer below) - clear any already-attached files so
                     // they don't linger, hidden, attached to a mode that can't use them.
                     clearAdhocFiles();
+                    // Phase 45 - a manual dropdown pick is a fresh start:
+                    // without this, switching away from Direct RAG by hand
+                    // (while the checkbox was checked) would leave "GenAI
+                    // Chat Workflow" shown as checked with nothing it
+                    // enables actually active, since it's always visible now.
+                    setAdhocChatEnabled(false);
                   }}
                 >
                   {Object.entries(MODE_LABELS).map(([value, label]) => (
@@ -1613,44 +1623,49 @@ export default function ChatPage() {
               visible. */}
           <div className="composer-left-links">
             {/* 2026-10-30 - user-directed: this sits OUTSIDE the gold-bordered
-                composer-row box (a sibling, not a composer-row child) - the
-                prior placement put it inside the box, which wasn't what was
-                asked. Same genai-rag-only gating carried over unchanged. */}
-            {effectiveMode === "genai-rag" && (
-              <div className="composer-adhoc-toggle" title="Enable GenAI Chat Workflow - attach a file to ask about it directly">
-                <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
-                  <input
-                    id="adhoc-chat-enabled-checkbox"
-                    type="checkbox"
-                    checked={adhocChatEnabled}
-                    onChange={(event) => {
-                      setAdhocChatEnabled(event.target.checked);
-                      // Mirrors the mode-switch cleanup above - don't leave files
-                      // attached, hidden, to a feature that's now turned off.
-                      if (!event.target.checked) {
-                        clearAdhocFiles();
-                      }
-                    }}
-                  />
-                  GenAI Chat Workflow
-                </label>
-                <DocLink featureName="genai-chat-workflow" />
-                <HelpPopover label="What is the GenAI Chat Workflow?">
-                  <p>
-                    Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
-                    about it directly, instead of searching the HR knowledge base. The answer is based only on
-                    what's in the file you attached.
-                  </p>
-                  <p>
-                    Behind the scenes: this skips retrieval from the vector database entirely and reads your file
-                    straight into the model's context, and nothing from it is saved, indexed, or added to the
-                    shared knowledge base afterward. It can also search the web for related information and, if
-                    you ask, email the answer - and it remembers earlier turns in the same attached-file
-                    conversation.
-                  </p>
-                </HelpPopover>
-              </div>
-            )}
+                composer-row box (a sibling, not a composer-row child). Phase
+                45 - user-directed: always visible now, regardless of RAG
+                Pipeline - it DRIVES the pipeline instead of waiting for it.
+                Checking it selects Direct RAG; unchecking it resets RAG
+                Pipeline back to this app's own default. */}
+            <div className="composer-adhoc-toggle" title="Enable GenAI Chat Workflow - attach a file to ask about it directly">
+              <label htmlFor="adhoc-chat-enabled-checkbox" className="checkbox-label">
+                <input
+                  id="adhoc-chat-enabled-checkbox"
+                  type="checkbox"
+                  checked={adhocChatEnabled}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setAdhocChatEnabled(checked);
+                    if (checked) {
+                      setSelectedMode("genai-rag");
+                    } else {
+                      // Mirrors the mode-switch cleanup below - don't leave
+                      // files attached, hidden, to a feature that's now
+                      // turned off.
+                      clearAdhocFiles();
+                      setSelectedMode(DEFAULT_CHAT_MODE);
+                    }
+                  }}
+                />
+                GenAI Chat Workflow
+              </label>
+              <DocLink featureName="genai-chat-workflow" />
+              <HelpPopover label="What is the GenAI Chat Workflow?">
+                <p>
+                  Attach your own file (a PDF, Word doc, or CSV - an offer letter, a policy document) and ask
+                  about it directly, instead of searching the HR knowledge base. The answer is based only on
+                  what's in the file you attached.
+                </p>
+                <p>
+                  Behind the scenes: this skips retrieval from the vector database entirely and reads your file
+                  straight into the model's context, and nothing from it is saved, indexed, or added to the
+                  shared knowledge base afterward. It can also search the web for related information and, if
+                  you ask, email the answer - and it remembers earlier turns in the same attached-file
+                  conversation.
+                </p>
+              </HelpPopover>
+            </div>
             {/* Phase 28 - user-directed: Request Leave moved fully outside
                 the gold-bordered composer-row box too, to its left. Same
                 hr_support gating carried over unchanged, plus a "?"

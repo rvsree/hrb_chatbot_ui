@@ -51,37 +51,39 @@ export default function IndexedKbDocumentsModal({ onClose, userProfile }: Indexe
         {!error && !documents && <p>Loading...</p>}
         {!error && documents && documents.length === 0 && <p>No documents have been indexed yet.</p>}
         {!error && documents && documents.length > 0 && (
-          <table className="documents-table">
-            <thead>
-              <tr>
-                <th>Filename</th>
-                <th>Status</th>
-                <th>Chunks</th>
-                <th>Embedding Model</th>
-                <th>Version</th>
-                <th>Size</th>
-                <th>Last Indexed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((doc) => (
-                <tr key={doc.id}>
-                  <td>{doc.filename}</td>
-                  <td>
-                    <span className={`status-badge status-${doc.status}`}>{statusLabel(doc.status, doc.error_message)}</span>
-                  </td>
-                  <td>{doc.chunk_count}</td>
-                  <td>{doc.embedding_model ?? "—"}</td>
-                  <td>
-                    v{doc.versioning_info?.document_version ?? 1}
-                    {doc.versioning_info && !doc.versioning_info.is_current ? " (superseded)" : ""}
-                  </td>
-                  <td>{(doc.file_size_bytes / 1024).toFixed(0)} KB</td>
-                  <td>{doc.last_indexed_at ? new Date(doc.last_indexed_at).toLocaleDateString() : "—"}</td>
+          <div className="indexed-kb-table-wrapper">
+            <table className="documents-table">
+              <thead>
+                <tr>
+                  <th>Filename</th>
+                  <th>Status</th>
+                  <th>Chunks</th>
+                  <th>Embedding Model</th>
+                  <th>Version</th>
+                  <th>Size</th>
+                  <th>Last Indexed</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {documents.map((doc) => (
+                  <tr key={doc.id}>
+                    <td>{doc.filename}</td>
+                    <td>
+                      <span className={`status-badge status-${doc.status}`}>{statusLabel(doc.status, doc.error_message)}</span>
+                    </td>
+                    <td>{doc.chunk_count}</td>
+                    <td>{doc.embedding_model ?? "—"}</td>
+                    <td>
+                      v{doc.versioning_info?.document_version ?? 1}
+                      {doc.versioning_info && !doc.versioning_info.is_current ? " (superseded)" : ""}
+                    </td>
+                    <td>{(doc.file_size_bytes / 1024).toFixed(0)} KB</td>
+                    <td>{doc.last_indexed_at ? new Date(doc.last_indexed_at).toLocaleDateString() : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {/* Phase 41 - same public README link ChatbotFeaturesModal's own
@@ -91,7 +93,7 @@ export default function IndexedKbDocumentsModal({ onClose, userProfile }: Indexe
             this read-only, every-role view. */}
         <p className="dev-note-inline">
           <a
-            href="https://github.com/rvsree/hrb_chatbot_service/blob/master/README.md#how-ingestion-actually-works-plain-language"
+            href="https://github.com/rvsree/hrb_chatbot_service/blob/master/README.md#how-ingestion-actually-works"
             target="_blank"
             rel="noopener noreferrer"
           >

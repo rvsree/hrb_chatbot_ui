@@ -91,7 +91,7 @@ const CORE_CAPABILITIES: CoreCapability[] = [
     title: "Grow the knowledge base",
     text: "Every document the chatbot answers from got here the same way: extract the text, split it into chunks, embed, and index - available to the HR Support role.",
     tryHint: "Try it: log in as the sample HR Support persona, upload a PDF under Documents, then come back and ask about what you just added.",
-    learnMoreHref: `${CHATBOT_README}#how-ingestion-actually-works-plain-language`,
+    learnMoreHref: `${CHATBOT_README}#how-ingestion-actually-works`,
   },
 ];
 

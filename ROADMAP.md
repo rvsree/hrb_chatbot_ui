@@ -23,6 +23,9 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 41 | Add a "Learn more" link under IndexedKbDocumentsModal pointing to the real (public) ingestion architecture writeup | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 42 | Widen IndexedKbDocumentsModal (640px -> 1000px) - its 7-column table overflowed the old width | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 43 | Short, visitor-facing ingestion explainer + real Mermaid diagram in README; both "Learn more" links repointed to it from the verbose curl-examples anchor | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 44 | Repoint both "Learn more" links to the new, shorter README anchor after the Mermaid diagram was replaced with a designed SVG | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 45 | "GenAI Chat Workflow" always visible; checkbox now drives RAG Pipeline instead of being gated by it | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 46 | IndexedKbDocumentsModal: explicit scroll container for the table, more visible height | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -638,3 +641,36 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** adding a matching concise explainer for Retrieval (the ChatbotFeaturesModal's own "How Your Questions Get Answered" section, Phase 40, already covers that conceptually in-app - no README duplicate needed). Rewriting or removing the existing curl-examples subsection - kept as-is for developers, just no longer the visitor-facing link target.
     - **Open questions:** none.
   - **Built and verified:** `hrb_chatbot_service/README.md` gained the new subsection + Mermaid diagram (that repo's own commit, separate from this one). `ChatbotFeaturesModal.tsx`'s "Grow the knowledge base" capability and `IndexedKbDocumentsModal.tsx`'s link both repointed to `#how-ingestion-actually-works-plain-language`. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 44 (done) — Repoint both "Learn more" links to the new, shorter README anchor after `hrb_chatbot_service` replaced its Mermaid diagram with a designed SVG.** User-directed, 2026-11-02: "the current one looks awful... remove unwanted text info... assume you are a visitor... assume you are a product owner."
+  - **Spec:**
+    - **Context:** `hrb_chatbot_service`'s own commit (this phase's dependency) replaced the plain Mermaid flowchart with a hand-designed SVG (title bar, 5 numbered step cards, a green-accented "Store" card, the "one file at a time" note baked into the image itself) and cut the surrounding README prose from ~5 sentences to 2 lines - the heading text changed from "How ingestion actually works (plain-language)" to "How ingestion actually works," which changes the GitHub anchor slug.
+    - **Data/API contracts:** none - link `href` strings only.
+    - **User-visible behavior:** both links now resolve to the new, shorter section instead of 404-ing on the old anchor.
+    - **Implementation shape:** `ChatbotFeaturesModal.tsx` and `IndexedKbDocumentsModal.tsx` - `#how-ingestion-actually-works-plain-language` -> `#how-ingestion-actually-works` in both.
+    - **Failure modes:** N/A.
+    - **Out of scope:** none.
+    - **Open questions:** none.
+  - **Built and verified:** both files' `href`/`learnMoreHref` updated. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 45 (done) — "GenAI Chat Workflow" always visible; the checkbox now drives RAG Pipeline instead of being gated by it.** User-directed, 2026-11-02: "must be displayed regardless of... RAG Pipeline... when checkbox checked, internally select Direct RAG; when unchecked, set it to the default settings."
+  - **Spec:**
+    - **Context:** Phase 38 stacked this control above Request Leave but kept its pre-existing gate (`effectiveMode === "genai-rag"` - only rendered when Direct RAG was already selected). The user wants the causality reversed: the checkbox should be visible always and *set* the pipeline, not wait for it.
+    - **Data/API contracts:** none - purely client-side mode selection, same `selectedMode` state/request field as every other pipeline switch already uses.
+    - **User-visible behavior:** the checkbox renders on every page load, regardless of the current RAG Pipeline selection. Checking it sets RAG Pipeline to "Direct RAG" (`genai-rag`). Unchecking it (and clearing any attached files, unchanged) resets RAG Pipeline back to this app's own existing default, "Agentic Workflow" (`multi-agentic-rag` - Phase 157's user-directed default, reused as the literal value, not invented). Manually changing RAG Pipeline via the Settings dropdown while the checkbox is checked now also unchecks it (and clears files) - closes a gap the always-visible checkbox would otherwise introduce: without this, switching away from Direct RAG by hand would leave the box shown as checked while nothing it enables is actually active.
+    - **Implementation shape:** `ChatPage.tsx` - remove the `effectiveMode === "genai-rag" &&` gate around `.composer-adhoc-toggle`. New `DEFAULT_CHAT_MODE: ChatMode = "multi-agentic-rag"` constant (reused by `selectedMode`'s own `useState` initializer, replacing that literal, and by the new uncheck handler - one source for this default, not two). Checkbox `onChange`: checked -> `setSelectedMode("genai-rag")`; unchecked -> `clearAdhocFiles()` + `setSelectedMode(DEFAULT_CHAT_MODE)`. RAG Pipeline `<select>`'s existing `onChange` gains `setAdhocChatEnabled(false)` alongside its existing `clearAdhocFiles()` call.
+    - **Failure modes:** N/A - client-side state only.
+    - **Out of scope:** changing what the checkbox enables/disables (the file-attach icon's own gate, `selectedMode === "genai-rag" && adhocChatEnabled`, is unchanged - checking the box now reliably makes both halves of that condition true together, so it still works exactly as before).
+    - **Open questions:** none.
+  - **Built and verified:** `DEFAULT_CHAT_MODE` constant added, reused by both `selectedMode`'s initializer and the uncheck handler. Toggle's gate removed; `onChange` now drives `selectedMode`. RAG Pipeline `<select>`'s `onChange` now also unchecks the box. `npm run build`: clean, 69 modules. `npm run lint`: no new warnings.
+
+- [x] **Phase 46 (done) — IndexedKbDocumentsModal: explicit scroll container for the table, and more visible height.** User-directed, 2026-11-02: "wondering... auto enabled for horizontal/vertical scroll bar by default, also increase some more lines."
+  - **Spec:**
+    - **Context:** the table had no scroll container of its own - it relied on `.modal-card`'s own `overflow-y: auto` (vertical only) and would otherwise just overflow the card horizontally rather than scroll in a contained, visibly-styled region.
+    - **Data/API contracts:** none - CSS/markup only.
+    - **User-visible behavior:** the table sits inside a new bordered, rounded scroll region with both `overflow-x`/`overflow-y: auto` always active (not just appearing incidentally on overflow), `max-height: 480px` - comfortably more rows visible before scrolling than today's 6-document dataset needs, with headroom for a larger KB later.
+    - **Implementation shape:** `IndexedKbDocumentsModal.tsx` - wraps `<table>` in a new `<div className="indexed-kb-table-wrapper">`. `App.css` - new `.indexed-kb-table-wrapper` (`overflow: auto; max-height: 480px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin: 8px 0 12px;`).
+    - **Failure modes:** N/A.
+    - **Out of scope:** further widening `.indexed-kb-modal` itself (Phase 42 already sized it at 1000px) - this phase only changes the table's own scroll behavior and visible height.
+    - **Open questions:** none.
+  - **Built and verified:** `<table>` wrapped in new `.indexed-kb-table-wrapper`. `npm run build`: clean, 69 modules.
