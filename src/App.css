@@ -2064,6 +2064,25 @@ button.tag:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* Phase 54 - neither of the 2 rules above had its own :hover state, so
+   hovering fell through to the global button:hover:not(:disabled) rule
+   (App.css line ~174) - a strong navy background (--accent-strong) that
+   never touches color, leaving dark text unreadable on top of it. These
+   2 rules are specific enough (class + 2 pseudo-classes each) to beat
+   that global one outright, same gentle "text turns --accent" treatment
+   .link-button:hover already uses elsewhere in this app. */
+.tab-strip-button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tab-strip-button-active:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* A nested tab-strip (mid/leaf level inside an already-selected top-level
    tab, e.g. Build & Deployment's clusters, Explainability's Retrieval vs
    Response Generation) sits directly under its parent row with no gap. */

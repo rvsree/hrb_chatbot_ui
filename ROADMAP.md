@@ -33,6 +33,7 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 51 | Memory/Resiliency Settings tabs visible to every role, read-only; editing stays admin-only | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 52 | Reword the empty-chat message to point at Sample Queries, as a clickable inline link | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 53 | Fix IdleSessionGuard's countdown: the warning effect was killing its own just-created timers on every render | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 54 | Fix unreadable tab-hover text app-wide - `.tab-strip-button` had no `:hover` rule of its own | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -757,3 +758,14 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Out of scope:** none - this is a bug fix for already-spec'd (Phase 35) behavior, not new scope.
     - **Open questions:** none.
   - **Built and verified:** new `showWarningRef` kept in sync by its own tiny effect; `handleActivity()` reads the ref instead of closing over `showWarning`; the main effect's dependency array is now `[]`. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 54 (done) — Fix unreadable tab-hover text app-wide: `.tab-strip-button` had no `:hover` rule of its own.** User-reported, 2026-11-02: "all tabs when hovering becomes strong microsofy blue or navy which makes the tab text almost not readable as they are black."
+  - **Spec:**
+    - **Context:** traced directly. `.tab-strip-button`/`.tab-strip-button-active` (shared by every tab strip in the app - Settings, `ExplainabilityModal`, `FinopsPanel`, `AdminDashboardPage`, confirmed by grep) have their own resting `background`/`color`, but no `:hover` rule - so hovering falls through to the global `button:hover:not(:disabled)` rule (`background: var(--accent-strong)`, a strong navy, `#35537f` in light mode), which is more specific than `.tab-strip-button`'s own resting styles but never touches `color` - leaving `.tab-strip-button`'s dark `var(--text-muted)` text sitting on that navy background. Checked `.documents-table`'s own row-hover (soft `--surface-sunken`, no color change) and `.sample-login-grid` (no hover rule at all) - neither has this bug.
+    - **Data/API contracts:** none - CSS only.
+    - **User-visible behavior:** hovering any tab (active or not) now shows a gentle, pale blue wash (`--accent-soft`) with the text turning `--accent` (a mild blue, not black-on-navy and not the strong `--accent-strong`) - same hover-text-turns-accent-blue treatment `.link-button:hover` already uses elsewhere in this app, applied here too for consistency.
+    - **Implementation shape:** `App.css` - new `.tab-strip-button:hover:not(:disabled)` and `.tab-strip-button-active:hover:not(:disabled)` rules (`background: var(--accent-soft); border-color: var(--accent); color: var(--accent);`), specific enough (class + 2 pseudo-classes) to beat the global `button:hover:not(:disabled)` rule (element + 2 pseudo-classes) outright.
+    - **Failure modes:** N/A.
+    - **Out of scope:** auditing every other button class in the app for the same gap - checked the ones flagged ("grid") directly and found no instance; a full exhaustive audit of every button class wasn't run, since the dynamic `className={condition ? a : b}` pattern most tab buttons use doesn't show up in a plain static-string grep, and the only real finding was this one shared class.
+    - **Open questions:** none.
+  - **Built and verified:** new `.tab-strip-button:hover:not(:disabled)`/`.tab-strip-button-active:hover:not(:disabled)` rules added, confirmed more specific than the global `button:hover:not(:disabled)` rule they were losing to. Fixes every tab strip that shares this class (Settings, Explainability, Finops, Admin Dashboard) in one change. `npm run build`: clean, 69 modules.
