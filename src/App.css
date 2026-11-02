@@ -3243,6 +3243,14 @@ table.iqa-kw-table tr:last-child td {
   max-width: 920px;
   max-height: min(860px, 92vh);
 }
+/* Phase 42 - IndexedKbDocumentsModal's 7-column table overflowed
+   .modal-card-wide's 640px. Placed here deliberately, after .modal-card -
+   see Phase 37's own real bug (a same-specificity rule earlier in the
+   file silently loses to one later in it). */
+.indexed-kb-modal {
+  width: 1000px;
+  max-width: 1000px;
+}
 /* Phase 30 - renamed from .sample-queries-list/.sample-queries-category
    (generic "titled section" layout, nothing query-specific in these 2
    rules) once ChatbotFeaturesModal needed the exact same section look

@@ -40,7 +40,7 @@ export default function IndexedKbDocumentsModal({ onClose, userProfile }: Indexe
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card modal-card-wide" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-card indexed-kb-modal" onClick={(event) => event.stopPropagation()}>
         <h2>Indexed KB Documents</h2>
         <p className="dev-note">
           Every document the chatbot can currently answer from - read-only. Uploading, reindexing, and deleting stay
@@ -91,7 +91,7 @@ export default function IndexedKbDocumentsModal({ onClose, userProfile }: Indexe
             this read-only, every-role view. */}
         <p className="dev-note-inline">
           <a
-            href="https://github.com/rvsree/hrb_chatbot_service/blob/master/README.md#upload-documents-index-them-and-ask-the-knowledge-base"
+            href="https://github.com/rvsree/hrb_chatbot_service/blob/master/README.md#how-ingestion-actually-works-plain-language"
             target="_blank"
             rel="noopener noreferrer"
           >
