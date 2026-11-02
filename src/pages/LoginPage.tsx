@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ApiRequestError, resumeBackendActivation, validateLogin } from "../api/client";
+import { ApiRequestError, resumeBackendActivation, validateLogin, type LoginResult } from "../api/client";
 import { useIdentity } from "../context/IdentityContext";
 import type { Role, UserProfile } from "../types";
 import EyeIcon from "../components/EyeIcon";
@@ -128,11 +128,37 @@ export default function LoginPage() {
     setChatbotWakeActive(true);
   }
 
+  // Phase 34 - a transient 404/502/503/504 right after ChatbotWakeWait's
+  // own /ping succeeded is a real, observed race: /ping only confirms
+  // hrb-chatbot answers a cheap GET, not that hrb-api-gateway's own
+  // routing has finished warming up for a POST. Most such races resolve
+  // within a few seconds, so retry silently before ever showing the
+  // visitor an error.
+  const LOGIN_RETRY_ATTEMPTS = 2;
+  const LOGIN_RETRY_DELAY_MS = 3000;
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   async function performLogin() {
     setChatbotWakeActive(false);
     setIsValidating(true);
     try {
-      const result = await validateLogin(employeeId.trim(), fullName.trim(), role, secretCode.trim() || undefined);
+      let result: LoginResult;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          result = await validateLogin(employeeId.trim(), fullName.trim(), role, secretCode.trim() || undefined);
+          break;
+        } catch (error) {
+          const likelyTransient =
+            error instanceof ApiRequestError && [404, 502, 503, 504].includes(error.status);
+          if (!likelyTransient || attempt >= LOGIN_RETRY_ATTEMPTS) {
+            throw error;
+          }
+          await sleep(LOGIN_RETRY_DELAY_MS);
+        }
+      }
       // Phase 2 (hrb_chatbot_service Phase 265) - the backend's own login
       // response never includes a timezone (it has no way to know it);
       // the frontend is the only accurate source. Captured once here,

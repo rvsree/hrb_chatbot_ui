@@ -3408,3 +3408,16 @@ table.iqa-kw-table tr:last-child td {
   font-size: 13.5px;
   line-height: 1.4;
 }
+
+/* Phase 34 - per-service status lines under ChatbotWakeWait's "Waking
+   up..." message. */
+.wake-service-status-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}

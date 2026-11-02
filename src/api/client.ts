@@ -1601,6 +1601,11 @@ export async function getTestingStrategySample<T>(dataset: TestingStrategyDatase
   return (await response.json()) as TestingStrategySampleResponse<T>;
 }
 
+export interface WakeUpResponse {
+  resumed: boolean;
+  services?: Record<string, string>;
+}
+
 // Phase 24 (hrb_chatbot_service's own Phase 287) - called unconditionally,
 // before validateLogin(), the instant Sign In is clicked. Never throws -
 // a network error or an over-the-rate-limit response is treated the same
@@ -1609,14 +1614,22 @@ export async function getTestingStrategySample<T>(dataset: TestingStrategyDatase
 // above. No-ops when the Lambda isn't configured (local dev, or before
 // its AWS infra is provisioned) - hrb-chatbot is never paused outside
 // production anyway.
-export async function wakeUpChatbotService(): Promise<void> {
+//
+// Phase 34 - now returns the Lambda's real `{resumed, services}` body
+// (previously discarded) so ChatbotWakeWait can show per-service status;
+// still resolves `null` (never throws) on any network/parse failure, so
+// nothing about the existing fail-silent contract changes for callers
+// that ignore the result.
+export async function wakeUpChatbotService(): Promise<WakeUpResponse | null> {
   if (!WAKE_UP_FUNCTION_URL) {
-    return;
+    return null;
   }
   try {
-    await fetch(WAKE_UP_FUNCTION_URL, { method: "POST" });
+    const response = await fetch(WAKE_UP_FUNCTION_URL, { method: "POST" });
+    return (await response.json()) as WakeUpResponse;
   } catch {
     // Intentionally ignored - see comment above.
+    return null;
   }
 }
 

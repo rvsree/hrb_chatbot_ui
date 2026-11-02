@@ -1,5 +1,6 @@
 import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 import { IdentityProvider, useIdentity } from "./context/IdentityContext";
+import IdleSessionGuard from "./components/IdleSessionGuard";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
@@ -19,7 +20,12 @@ function RequireIdentity({ children }: { children: React.ReactElement }) {
   if (!identity) {
     return <Navigate to="/login" replace />;
   }
-  return children;
+  return (
+    <>
+      <IdleSessionGuard />
+      {children}
+    </>
+  );
 }
 
 function AppRoutes() {
