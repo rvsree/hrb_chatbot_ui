@@ -30,6 +30,7 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
 | 48 | "Sample login" popover: real grid, wider popover, 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 49 | "Sample login" popover: more width/height, "Emp ID" column rename, a true 3-line gap before "Project documentation" | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 50 | Fix 2 real bugs in Phase 49: the link gap and width increase neither actually applied | ✅ Built and verified | ✅ Spec'd - see detail below |
+| 51 | Memory/Resiliency Settings tabs visible to every role, read-only; editing stays admin-only | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 5 | Manual-testing feedback round 2: real stage tooltip content, Explainability flattened to 2 levels | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 6 | Manual-testing feedback round 3: Settings moved into the chat UI's own Settings modal, Application-dropdown consistency | ✅ Built and verified | ✅ Spec'd - see detail below |
 | 7 | Manual-testing feedback round 4: real `X-Forwarded-For`-based IP capture (backend), Live Queries select+bulk-delete | ✅ Built and verified | ✅ Spec'd - see detail below |
@@ -721,3 +722,14 @@ Phase-by-phase plan and history, same convention as the other 6 repos in this pl
     - **Failure modes:** N/A.
     - **Open questions:** none.
   - **Built and verified:** confirmed no other rule in `App.css` outranks the new `.help-popover-body p.sample-login-doc-link` selector (grepped every `.help-popover-body p`/`sample-login-doc-link` hit). `.sample-login-grid` gained `min-width: 480px`. `npm run build`: clean, 69 modules.
+
+- [x] **Phase 51 (done) — Memory/Resiliency Settings tabs visible to every role, read-only; editing stays admin-only.** User-directed, 2026-11-02, after confirming the tabs were correctly admin-only by design, then asking "we can show those additional tabs in read-only mode - right?"
+  - **Spec:**
+    - **Context:** depends on `hrb_chatbot_service`'s own Phase 293 (widens `GET .../app-settings/{key}` to every role, already built/tested - 82/82 passed). `SettingField` (`SettingsPanel.tsx`) already calls `getAppSetting()` for whatever `userProfile` it's given - once the backend allows it, a non-admin's read just starts succeeding with no fetch-logic change needed; only the Save path and the field's own disabled state need a new `readOnly` concept.
+    - **Data/API contracts:** none new - same `getAppSetting`/`updateAppSetting` client calls.
+    - **User-visible behavior:** Memory and Resiliency tab buttons (and their panels) render for every role now, not just `admin`. For a non-admin, every field inside shows its real current value, disabled, with no Save button at all (not just a disabled one that would 403 if clicked) - a non-admin has nothing there to click, deliberately, rather than a dead button inviting a failed attempt.
+    - **Implementation shape:** `SettingsPanel.tsx` - new `readOnly?: boolean` prop on `SettingFieldProps`/`SettingField`; when true, the input's own `disabled` gains `|| readOnly` and the "Save"/message row doesn't render at all. `ChatPage.tsx` - the `currentIdentity.role === "admin" &&` gate removed from the Memory/Resiliency tab-button fragment and both tab-panel conditions (now just `settingsTab === "memory"`/`"resiliency"`); every `SettingField` inside those 2 panels gets `readOnly={currentIdentity.role !== "admin"}`.
+    - **Failure modes:** N/A - this view never attempts a write for a non-admin at all now, so there's no 403 path to hit from this UI (the backend's own `update_app_setting` 403 still exists as defense-in-depth, just unreachable from here for a non-admin).
+    - **Out of scope:** the Model tab's `judge_provider_default` field - stays admin-only, gate untouched (not part of this ask).
+    - **Open questions:** none.
+  - **Built and verified:** `SettingsPanel.tsx` - new `readOnly` prop, hides Save/message and adds `|| readOnly` to the input's own `disabled`. `ChatPage.tsx` - `currentIdentity.role === "admin" &&` removed from the tab-button fragment and both panel conditions; all 7 `SettingField`s across the 2 panels now pass `readOnly={currentIdentity.role !== "admin"}`. `npm run build`: clean, 69 modules. `npm run lint`: no new warnings in either touched file.

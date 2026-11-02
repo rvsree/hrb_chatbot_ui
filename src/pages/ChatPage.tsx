@@ -899,28 +899,25 @@ export default function ChatPage() {
             >
               Model
             </button>
-            {/* 2026-10-29 - admin-only (user-directed): these moved from the
-                Admin Dashboard's own DevOps-only "Settings" category, so
-                they keep the same access restriction here, not widened to
-                every role just because the tab moved. */}
-            {currentIdentity.role === "admin" && (
-              <>
-                <button
-                  type="button"
-                  className={settingsTab === "memory" ? "tab-strip-button-active" : "tab-strip-button"}
-                  onClick={() => setSettingsTab("memory")}
-                >
-                  Memory
-                </button>
-                <button
-                  type="button"
-                  className={settingsTab === "resiliency" ? "tab-strip-button-active" : "tab-strip-button"}
-                  onClick={() => setSettingsTab("resiliency")}
-                >
-                  Resiliency
-                </button>
-              </>
-            )}
+            {/* 2026-10-29 - moved from the Admin Dashboard's own DevOps-only
+                "Settings" category. Phase 51 - user-directed: visible to
+                every role now, read-only for non-admins (see the panels'
+                own SettingField readOnly prop below) - no longer gated
+                behind currentIdentity.role === "admin" here. */}
+            <button
+              type="button"
+              className={settingsTab === "memory" ? "tab-strip-button-active" : "tab-strip-button"}
+              onClick={() => setSettingsTab("memory")}
+            >
+              Memory
+            </button>
+            <button
+              type="button"
+              className={settingsTab === "resiliency" ? "tab-strip-button-active" : "tab-strip-button"}
+              onClick={() => setSettingsTab("resiliency")}
+            >
+              Resiliency
+            </button>
           </div>
 
           {settingsTab === "rag-search" && (
@@ -1271,10 +1268,10 @@ export default function ChatPage() {
           )}
 
           {/* 2026-10-29 - moved from the Admin Dashboard's removed
-              "Settings" category (its own former Memory/Resiliency
-              sub-tabs) - see the tab-row buttons above for the admin-only
-              gating these 2 tabs carry over unchanged. */}
-          {settingsTab === "memory" && currentIdentity.role === "admin" && (
+              "Settings" category. Phase 51 - user-directed: visible to
+              every role, read-only for non-admins (readOnly prop below) -
+              no longer gated behind currentIdentity.role === "admin". */}
+          {settingsTab === "memory" && (
             <div className="settings-tab-panel">
               <SettingField
                 userProfile={currentIdentity}
@@ -1289,11 +1286,12 @@ export default function ChatPage() {
                 min={0}
                 max={1}
                 step={0.05}
+                readOnly={currentIdentity.role !== "admin"}
               />
             </div>
           )}
 
-          {settingsTab === "resiliency" && currentIdentity.role === "admin" && (
+          {settingsTab === "resiliency" && (
             <div className="settings-tab-panel">
               <SettingField
                 userProfile={currentIdentity}
@@ -1303,6 +1301,7 @@ export default function ChatPage() {
                 kind="number"
                 min={1}
                 step={1}
+                readOnly={currentIdentity.role !== "admin"}
               />
               <SettingField
                 userProfile={currentIdentity}
@@ -1312,6 +1311,7 @@ export default function ChatPage() {
                 kind="number"
                 min={1}
                 step={1}
+                readOnly={currentIdentity.role !== "admin"}
               />
               <SettingField
                 userProfile={currentIdentity}
@@ -1321,6 +1321,7 @@ export default function ChatPage() {
                 kind="number"
                 min={1}
                 step={1}
+                readOnly={currentIdentity.role !== "admin"}
               />
               <SettingField
                 userProfile={currentIdentity}
@@ -1330,6 +1331,7 @@ export default function ChatPage() {
                 kind="number"
                 min={1}
                 step={1}
+                readOnly={currentIdentity.role !== "admin"}
               />
               <SettingField
                 userProfile={currentIdentity}
@@ -1339,6 +1341,7 @@ export default function ChatPage() {
                 kind="number"
                 min={1}
                 step={1}
+                readOnly={currentIdentity.role !== "admin"}
               />
               <SettingField
                 userProfile={currentIdentity}
@@ -1348,6 +1351,7 @@ export default function ChatPage() {
                 kind="number"
                 min={1}
                 step={1}
+                readOnly={currentIdentity.role !== "admin"}
               />
               <SettingField
                 userProfile={currentIdentity}
@@ -1357,6 +1361,7 @@ export default function ChatPage() {
                 kind="number"
                 min={1}
                 step={1}
+                readOnly={currentIdentity.role !== "admin"}
               />
             </div>
           )}

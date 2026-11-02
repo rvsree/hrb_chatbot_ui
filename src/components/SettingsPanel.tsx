@@ -33,6 +33,11 @@ interface SettingFieldProps {
   min?: number;
   max?: number;
   step?: number;
+  // Phase 51 - lets Memory/Resiliency show every role their real current
+  // value without granting write access. No Save button at all in this
+  // mode, not just a disabled one - a non-admin has nothing here to
+  // click, rather than a button that would only ever 403.
+  readOnly?: boolean;
 }
 
 // One field: loads its current value on mount (404 -> documented
@@ -46,7 +51,18 @@ interface SettingFieldProps {
 // admin-only gated there) - user-directed, this is a reusable field
 // building block, not a full panel, so only SettingField itself is
 // exported now; the old default-exported tabbed wrapper is gone.
-export function SettingField({ userProfile, settingKey, label, helpText, kind, options, min, max, step }: SettingFieldProps) {
+export function SettingField({
+  userProfile,
+  settingKey,
+  label,
+  helpText,
+  kind,
+  options,
+  min,
+  max,
+  step,
+  readOnly = false,
+}: SettingFieldProps) {
   const [value, setValue] = useState<string>(String(DOCUMENTED_DEFAULTS[settingKey] ?? ""));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -107,7 +123,7 @@ export function SettingField({ userProfile, settingKey, label, helpText, kind, o
             id={`setting-${settingKey}`}
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            disabled={isLoading || isSaving}
+            disabled={isLoading || isSaving || readOnly}
           >
             {options?.map((option) => (
               <option key={option.value} value={option.value}>
@@ -124,14 +140,16 @@ export function SettingField({ userProfile, settingKey, label, helpText, kind, o
             max={max}
             step={step}
             onChange={(event) => setValue(event.target.value)}
-            disabled={isLoading || isSaving}
+            disabled={isLoading || isSaving || readOnly}
           />
         )}
-        <button type="button" onClick={handleSave} disabled={isLoading || isSaving}>
-          {isSaving ? "Saving..." : "Save"}
-        </button>
+        {!readOnly && (
+          <button type="button" onClick={handleSave} disabled={isLoading || isSaving}>
+            {isSaving ? "Saving..." : "Save"}
+          </button>
+        )}
       </div>
-      {message && <p className={messageIsError ? "error-banner" : "dev-note-inline"}>{message}</p>}
+      {!readOnly && message && <p className={messageIsError ? "error-banner" : "dev-note-inline"}>{message}</p>}
     </div>
   );
 }
