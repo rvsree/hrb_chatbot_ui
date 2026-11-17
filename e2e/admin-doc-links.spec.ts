@@ -18,6 +18,8 @@ test.describe("admin doc link popover", () => {
     await page.goto("/login");
     await page.locator("#employee-id").fill("ADM001");
     await page.locator("#full-name").fill("Sree Rad");
+    // Phase 55 (hrb_chatbot_service Phase 296) - new required field.
+    await page.locator("#guest-user-name").fill("QA Test Visitor");
     await page.locator("#role").selectOption("admin");
     await page.locator("#secret-code").fill(ADMIN_SECRET_CODE!);
     await page.getByRole("button", { name: /sign in/i }).click();

@@ -2406,6 +2406,26 @@ button.doc-link-popover-item:hover {
   border-bottom: none;
 }
 
+/* Phase 55 - user-reported: the shared .link-button.icon-button treatment
+   (a thin --accent-colored stroke, no fill) was still too easy to miss
+   here specifically - a first-time visitor isn't expecting a clickable
+   icon in this cell at all, unlike the chat page's own copy button next
+   to an obviously-interactive message. Scoped to this one grid, not
+   every icon-button app-wide - a global change risks regressing the
+   2026-10-30 fix already proven correct for the chat-message copy
+   button elsewhere. A solid filled pill reads as a real button. */
+.sample-login-grid .icon-button {
+  background: var(--accent-strong);
+  color: var(--accent-contrast);
+  border-radius: 5px;
+  padding: 4px 6px;
+}
+
+.sample-login-grid .icon-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
 /* Phase 49 - a REAL 3 text-lines at this popover's own 13px/1.5 line-height
    (3 x 19.5px = 58.5px, rounded to 59px) - Phase 48's `3em` (39px) was
    shorter than 3 lines, not 3 of them, which is why it didn't read as such.

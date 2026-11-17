@@ -71,6 +71,10 @@ async function login(page: Page, persona: ConversationalCase["persona"]) {
   await page.goto("/login");
   await page.locator("#employee-id").fill(persona.employee_id);
   await page.locator("#full-name").fill(persona.full_name);
+  // Phase 55 (hrb_chatbot_service Phase 296) - a new required field, same
+  // demo-visitor-tracking purpose as the Emp Name/ID fields above but
+  // unrelated to known_personas.py - any real name satisfies it.
+  await page.locator("#guest-user-name").fill("QA Test Visitor");
   await page.locator("#role").selectOption(persona.role);
   await page.getByRole("button", { name: /sign in/i }).click();
   await page.waitForURL(/\/chat/);

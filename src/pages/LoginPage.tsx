@@ -45,6 +45,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [employeeId, setEmployeeId] = useState("");
   const [fullName, setFullName] = useState("");
+  const [guestUserName, setGuestUserName] = useState("");
   const [role, setRole] = useState<Role>("employee");
   const [secretCode, setSecretCode] = useState("");
   const [isValidating, setIsValidating] = useState(false);
@@ -118,7 +119,7 @@ export default function LoginPage() {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!employeeId.trim() || !fullName.trim() || isValidating) {
+    if (!employeeId.trim() || !fullName.trim() || !guestUserName.trim() || isValidating) {
       return;
     }
     // Phase 24 - swap to ChatbotWakeWait immediately; performLogin() (the
@@ -148,7 +149,9 @@ export default function LoginPage() {
       let result: LoginResult;
       for (let attempt = 0; ; attempt++) {
         try {
-          result = await validateLogin(employeeId.trim(), fullName.trim(), role, secretCode.trim() || undefined);
+          result = await validateLogin(
+            employeeId.trim(), fullName.trim(), role, secretCode.trim() || undefined, true, guestUserName.trim(),
+          );
           break;
         } catch (error) {
           const likelyTransient =
@@ -287,6 +290,26 @@ export default function LoginPage() {
           />
         )}
 
+        <label htmlFor="guest-user-name" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          Guest Name
+          <HelpPopover label="What is Guest Name?">
+            <p>
+              Your own name, so we know who's trying the demo - separate from "Emp Name" above, which just
+              picks a sample persona. We only use it to show who's visiting, never for access or permissions.
+            </p>
+          </HelpPopover>
+        </label>
+        <input
+          id="guest-user-name"
+          type="text"
+          value={guestUserName}
+          onChange={(event) => setGuestUserName(event.target.value)}
+          placeholder="e.g. Taylor"
+          pattern={EMP_NAME_PATTERN}
+          title="Letters, spaces, hyphens, and apostrophes only"
+          required
+        />
+
         <label htmlFor="role">Role</label>
         <select id="role" value={role} onChange={(event) => handleRoleChange(event.target.value as Role)}>
           <option value="employee">Employee</option>
@@ -374,6 +397,7 @@ export default function LoginPage() {
                   ))}
                 </tbody>
               </table>
+              <p className="dev-note-inline">Click the copy icon to fill in and copy that row's ID + Name.</p>
               <p className="sample-login-doc-link">
                 <a
                   href="https://github.com/rvsree/hrb_emp_assist/blob/master/README.md#new-here-trying-the-live-demo"

@@ -13,6 +13,16 @@ export interface UserProfile {
   // IdentityContext.tsx), so 2 tabs signed in as the same persona count
   // as 2 active sessions on the backend's own presence tracker, not 1.
   tab_session_id?: string;
+  // Phase 55 (hrb_chatbot_service Phase 296) - the visitor's own typed
+  // name, separate from full_name (which stays tied to the backend's
+  // known-personas roster) - only ever used for Demo Visitors tracking.
+  guest_user_name?: string;
+  // Phase 55 (hrb_chatbot_service Phase 296) - a random id generated
+  // fresh on every real sign-in (sessionStorage, never localStorage -
+  // see IdentityContext.tsx), representing one demo visit, however many
+  // chat threads within it. Distinct from tab_session_id (stable for the
+  // tab's whole lifetime) and conversation_id (one per chat thread).
+  user_session_id?: string;
 }
 
 // Phase 2 - null when the demo-limit check is disabled/not applicable

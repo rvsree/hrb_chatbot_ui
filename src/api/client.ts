@@ -539,6 +539,12 @@ export async function validateLogin(
   // (does this secret code unlock the reveal icons?), so it never counts
   // toward the backend's lockout. True (the default) for a real Sign In click.
   countAsAttempt = true,
+  // Phase 55 (hrb_chatbot_service Phase 296) - optional at the wire-shape
+  // level (the backend's own 2026-11-17 correction, after a first
+  // required version broke every real login) - undefined when blank,
+  // same omission pattern secretCode already uses, so an empty string
+  // never reaches the backend as a true empty value.
+  guestUserName?: string,
 ): Promise<LoginResult> {
   const response = await fetch(`${API_BASE_URL}/v1/auth/login`, {
     method: "POST",
@@ -549,6 +555,7 @@ export async function validateLogin(
       role,
       secret_code: secretCode,
       count_as_attempt: countAsAttempt,
+      guest_user_name: guestUserName || undefined,
     }),
   });
 
